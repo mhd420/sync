@@ -169,6 +169,7 @@ module.exports = {
 
         require('./routes/channel')(app, ioConfig);
         require('./routes/index')(app, channelIndex, webConfig.getMaxIndexEntries());
+        require('./routes/api')(app, channelIndex);
         app.get('/sioconfig(.json)?', handleLegacySocketConfig);
         require('./routes/socketconfig')(app, clusterClient);
         app.get('/useragreement', handleUserAgreement);

@@ -37,7 +37,7 @@ html(lang="en")
             #drinkbar.col-lg-12.col-md-12
               h1#drinkcount
           #main.row
-            #chatwrap.col-lg-5.col-md-5
+            #chatwrap.col-lg-3.col-md-3
               #chatheader
                 i#userlisttoggle.glyphicon.glyphicon-chevron-down.pull-left.pointer(title="Show/Hide Userlist")
                 span#usercount.pointer Not Connected
@@ -48,15 +48,15 @@ html(lang="en")
               #guestlogin.input-group
                 span.input-group-addon Guest login
                 input#guestname.form-control(type="text", placeholder="Name")
-            #videowrap.col-lg-7.col-md-7
+            #videowrap.col-lg-9.col-md-9
               p#currenttitle Nothing Playing
               .embed-responsive.embed-responsive-16by9
                 #ytapiplayer.embed-responsive-item
           #controlsrow.row
-            #leftcontrols.col-lg-5.col-md-5
+            #leftcontrols.col-lg-3.col-md-3
               button#newpollbtn.btn.btn-sm.btn-default New Poll
               button#emotelistbtn.btn.btn-sm.btn-default Emote List
-            #rightcontrols.col-lg-7.col-md-7
+            #rightcontrols.col-lg-9.col-md-9
               #plcontrol.btn-group
                 button#showsearch.btn.btn-sm.btn-default(title="Search for a video", data-toggle="collapse", data-target="#searchcontrol")
                   span.glyphicon.glyphicon-search
@@ -83,11 +83,11 @@ html(lang="en")
                   span.glyphicon.glyphicon-step-forward
 
           #playlistrow.row
-            #leftpane.col-lg-5.col-md-5
+            #leftpane.col-lg-3.col-md-3
               #leftpane-inner.row
                 #pollwrap.col-lg-12.col-md-12
                 #playlistmanagerwrap.col-lg-12.col-md-12
-            #rightpane.col-lg-7.col-md-7
+            #rightpane.col-lg-9.col-md-9
               #rightpane-inner.row
                 #searchcontrol.collapse.plcontrol-collapse.col-lg-12.col-md-12
                   .vertical-spacer
@@ -149,8 +149,8 @@ html(lang="en")
                     span#plcount 0 items
                     span#pllength 00:00:00
           #resizewrap.row
-            .col-lg-5.col-md-5
-            #videowidth.col-lg-7.col-md-7
+            .col-lg-3.col-md-3
+            #videowidth.col-lg-9.col-md-9
           #sitefooter
             include pagefooter
     #useroptions.modal.fade(tabindex="-1", role="dialog", aria-hidden="true")
