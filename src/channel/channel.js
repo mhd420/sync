@@ -322,8 +322,9 @@ Channel.prototype.joinUser = function (user, data) {
             return;
         }
 
+        user.channel = self;
         if (self.is(Flags.C_REGISTERED)) {
-            user.refreshAccount({ channel: self.name }, function (err, account) {
+            user.refreshAccount(function (err, account) {
                 if (err) {
                     Logger.errlog.log("user.refreshAccount failed at Channel.joinUser");
                     Logger.errlog.log(err.stack);
@@ -347,11 +348,9 @@ Channel.prototype.joinUser = function (user, data) {
 
             self.checkModules("onUserPreJoin", [user, data], function (err, result) {
                 if (result === ChannelModule.PASSTHROUGH) {
-                    if (user.account.channelRank !== user.account.globalRank) {
-                        user.socket.emit("rank", user.account.effectiveRank);
-                    }
                     self.acceptUser(user);
                 } else {
+                    user.channel = null;
                     user.account.channelRank = 0;
                     user.account.effectiveRank = user.account.globalRank;
                     self.refCounter.unref("Channel::user");
@@ -362,7 +361,6 @@ Channel.prototype.joinUser = function (user, data) {
 };
 
 Channel.prototype.acceptUser = function (user) {
-    user.channel = this;
     user.setFlag(Flags.U_IN_CHANNEL);
     user.socket.join(this.name);
     user.autoAFK();

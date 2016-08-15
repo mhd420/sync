@@ -67,6 +67,7 @@ var FILTER_TO = 0;
 var NO_STORAGE = typeof localStorage == "undefined" || localStorage === null;
 var SOCKETIO_CONNECT_ERROR_COUNT = 0;
 var HAS_CONNECTED_BEFORE = false;
+var IMAGE_MATCH = /<img\s[^>]*?src\s*=\s*['\"]([^'\"]*?)['\"][^>]*?>/gi;
 
 function getOpt(k) {
     var v = NO_STORAGE ? readCookie(k) : localStorage.getItem(k);
@@ -97,7 +98,7 @@ function getOrDefault(k, def) {
 }
 
 var USEROPTS = {
-    theme                : getOrDefault("theme", "/css/themes/slate.css"),
+    theme                : getOrDefault("theme", DEFAULT_THEME), // Set in head template
     layout               : getOrDefault("layout", "fluid"),
     synch                : getOrDefault("synch", true),
     hidevid              : getOrDefault("hidevid", false),
@@ -120,7 +121,8 @@ var USEROPTS = {
     secure_connection    : getOrDefault("secure_connection", false),
     show_shadowchat      : getOrDefault("show_shadowchat", false),
     emotelist_sort       : getOrDefault("emotelist_sort", true),
-    no_emotes            : getOrDefault("no_emotes", false)
+    no_emotes            : getOrDefault("no_emotes", false),
+    strip_image          : getOrDefault("strip_image", false)
 };
 
 /* Backwards compatibility check */
@@ -204,9 +206,9 @@ function eraseCookie(name) {
 (function () {
     var localVersion = parseFloat(getOpt("version"));
     if (isNaN(localVersion)) {
-        USEROPTS.theme = "/css/themes/slate.css";
+        USEROPTS.theme = DEFAULT_THEME;
         USEROPTS.layout = "fluid";
-        setOpt("theme", "/css/themes/slate.css");
+        setOpt("theme", DEFAULT_THEME);
         setOpt("layout", "fluid");
         setOpt("version", CL_VERSION);
     }

@@ -14,6 +14,9 @@ TYPE_MAP =
     hb: HitboxPlayer
     us: UstreamPlayer
     im: ImgurPlayer
+    vm: VideoJSPlayer
+    hl: HLSPlayer
+    sb: VideoJSPlayer
 
 window.loadMediaPlayer = (data) ->
     try
@@ -25,6 +28,14 @@ window.loadMediaPlayer = (data) ->
     if data.meta.direct and data.type != 'gd'
         try
             window.PLAYER = new VideoJSPlayer(data)
+        catch e
+            console.error e
+    else if data.type is 'gd'
+        try
+            if data.meta.html5hack
+                window.PLAYER = new VideoJSPlayer(data)
+            else
+                window.PLAYER = new GoogleDriveYouTubePlayer(data)
         catch e
             console.error e
     else if data.type of TYPE_MAP

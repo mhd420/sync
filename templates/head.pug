@@ -1,14 +1,19 @@
+- var DEFAULT_THEME = "/css/themes/slate.css";
+
 mixin head()
   meta(charset="utf-8")
   meta(name="viewport", content="width=device-width, initial-scale=1.0")
-  meta(name="description", content="#{siteDescription}")
-  meta(name="author", content="#{siteAuthor}")
+  meta(name="description", content=siteDescription)
+  meta(name="author", content=siteAuthor)
 
   title= siteTitle
   link(href="/css/sticky-footer-navbar.css", rel="stylesheet")
   link(href="/css/cytube.css", rel="stylesheet")
   link(href="/img/favicon.ico", rel="icon", type="image/x-icon")
-  link(id="usertheme", href="/css/themes/slate.css", rel="stylesheet")
+  link(id="usertheme", href=DEFAULT_THEME, rel="stylesheet")
+
+  script(type="text/javascript").
+    var DEFAULT_THEME = '#{DEFAULT_THEME}';
   script(src="/js/theme.js")
   //[if lt IE 9]
     <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>

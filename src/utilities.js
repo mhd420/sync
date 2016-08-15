@@ -119,7 +119,7 @@
             });
         }
 
-        return result.join(":"); 
+        return result.join(":");
     },
 
     root.formatTime = function (sec) {
@@ -220,6 +220,8 @@
                 return "http://vimeo.com/" + id;
             case "dm":
                 return "http://dailymotion.com/video/" + id;
+            case "vm":
+                return "https://vid.me/" + id;
             case "sc":
                 return id;
             case "li":
@@ -240,6 +242,10 @@
                 return id;
             case "hb":
                 return "http://hitbox.tv/" + id;
+            case "hl":
+                return id;
+            case "sb":
+                return "https://streamable.com/" + id;
             default:
                 return "";
         }
@@ -255,6 +261,7 @@
             case "im":
             case "jw":
             case "hb":
+            case "hl":
                 return true;
             default:
                 return false;
@@ -290,8 +297,6 @@
             var accumulator = "";
 
             parts = parts.map(function (segment, i) {
-                if (i < 2) return segment;
-
                 var part = iphash(accumulator + segment + i, 3);
                 accumulator += segment;
                 return part;
@@ -307,8 +312,6 @@
             var accumulator = "";
 
             parts = parts.map(function (segment, i) {
-                if (i < 2) return segment;
-
                 var part = iphash(accumulator + segment + i, 4);
                 accumulator += segment;
                 return part;

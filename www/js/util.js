@@ -1,4 +1,4 @@
-function makeAlert(title, text, klass) {
+function makeAlert(title, text, klass, textOnly) {
     if(!klass) {
         klass = "alert-info";
     }
@@ -7,8 +7,9 @@ function makeAlert(title, text, klass) {
 
     var al = $("<div/>").addClass("alert")
         .addClass(klass)
-        .html(text)
         .appendTo(wrap);
+    textOnly ? al.text(text) : al.html(text) ;
+
     $("<br/>").prependTo(al);
     $("<strong/>").text(title).prependTo(al);
     $("<button/>").addClass("close pull-right").html("&times;")
@@ -29,6 +30,8 @@ function formatURL(data) {
             return "http://vimeo.com/" + data.id;
         case "dm":
             return "http://dailymotion.com/video/" + data.id;
+        case "vm":
+            return "https://vid.me/" + data.id;
         case "sc":
             return data.id;
         case "li":
@@ -49,6 +52,10 @@ function formatURL(data) {
             return data.id;
         case "hb":
             return "http://hitbox.tv/" + data.id;
+        case "hl":
+            return data.id;
+        case "sb":
+            return "https://streamable.com/" + data.id;
         default:
             return "#";
     }
@@ -640,6 +647,7 @@ function showUserOptions() {
     $("#us-ping-sound").val(USEROPTS.boop);
     $("#us-sendbtn").prop("checked", USEROPTS.chatbtn);
     $("#us-no-emotes").prop("checked", USEROPTS.no_emotes);
+    $("#us-strip-image").prop("checked", USEROPTS.strip_image);
 
     $("#us-modflair").prop("checked", USEROPTS.modhat);
     $("#us-shadowchat").prop("checked", USEROPTS.show_shadowchat);
@@ -673,6 +681,7 @@ function saveUserOptions() {
     USEROPTS.boop                 = $("#us-ping-sound").val();
     USEROPTS.chatbtn              = $("#us-sendbtn").prop("checked");
     USEROPTS.no_emotes            = $("#us-no-emotes").prop("checked");
+    USEROPTS.strip_image          = $("#us-strip-image").prop("checked");
 
     if (CLIENT.rank >= 2) {
         USEROPTS.modhat      = $("#us-modflair").prop("checked");
@@ -694,7 +703,7 @@ function applyOpts() {
         var old = $("#usertheme").attr("id", "usertheme_old");
         var theme = USEROPTS.theme;
         if (theme === "default") {
-            theme = "/css/themes/slate.css";
+            theme = DEFAULT_THEME;
         }
         $("<link/>").attr("rel", "stylesheet")
             .attr("type", "text/css")
@@ -1354,6 +1363,27 @@ function parseMediaLink(url) {
         };
     }
 
+    if((m = url.match(/vid\.me\/([\w-]+)/))) {
+        return {
+            id: m[1],
+            type: "vm"
+        };
+    }
+
+    if ((m = url.match(/(.*\.m3u8)/))) {
+        return {
+            id: m[1],
+            type: "hl"
+        };
+    }
+
+    if((m = url.match(/streamable\.com\/([\w-]+)/))) {
+        return {
+            id: m[1],
+            type: "sb"
+        };
+    }
+
     /*  Shorthand URIs  */
     // To catch Google Plus by ID alone
     if ((m = url.match(/^(?:gp:)?(\d{21}_\d{19}_\d{19})/))) {
@@ -1424,6 +1454,16 @@ function sendVideoUpdate() {
 
 /* chat */
 
+function stripImages(msg){
+    if (!USEROPTS.strip_image) {
+        return msg;
+    }
+    return msg.replace(IMAGE_MATCH, function(match,img){
+        return CHANNEL.opts.enable_link_regex ?
+            '<a target="_blank" href="'+img+'">'+img+'</a>' : img;
+    });
+}
+
 function formatChatMessage(data, last) {
     // Backwards compat
     if (!data.meta || data.msgclass) {
@@ -1443,6 +1483,7 @@ function formatChatMessage(data, last) {
     if (data.meta.forceShowName)
         skip = false;
 
+    data.msg = stripImages(data.msg);
     data.msg = execEmotes(data.msg);
 
     last.name = data.username;
@@ -1510,8 +1551,8 @@ function addChatMessage(data) {
     if (data.meta.shadow && !USEROPTS.show_shadowchat) {
         return;
     }
-    var div = formatChatMessage(data, LASTCHAT);
     var msgBuf = $("#messagebuffer");
+    var div = formatChatMessage(data, LASTCHAT);
     // Incoming: a bunch of crap for the feature where if you hover over
     // a message, it highlights messages from that user
     var safeUsername = data.username.replace(/[^\w-]/g, '\\$');
@@ -2468,58 +2509,6 @@ function formatCSChatFilterList() {
     });
 }
 
-function formatCSEmoteList() {
-    var tbl = $("#cs-emotes table");
-    tbl.find("tbody").remove();
-    var entries = CHANNEL.emotes || [];
-    entries.forEach(function (f) {
-        var tr = $("<tr/>").appendTo(tbl);
-        var del = $("<button/>").addClass("btn btn-xs btn-danger")
-            .appendTo($("<td/>").appendTo(tr));
-        $("<span/>").addClass("glyphicon glyphicon-trash").appendTo(del);
-        del.click(function () {
-            socket.emit("removeEmote", f);
-        });
-        var name = $("<code/>").text(f.name).addClass("linewrap")
-            .appendTo($("<td/>").appendTo(tr));
-        var image = $("<code/>").text(f.image).addClass("linewrap")
-            .appendTo($("<td/>").appendTo(tr));
-        image.popover({
-            html: true,
-            trigger: "hover",
-            content: '<img src="' + f.image + '" class="channel-emote">'
-        });
-
-        image.click(function () {
-            var td = image.parent();
-            td.find(".popover").remove();
-            image.detach();
-            var edit = $("<input/>").addClass("form-control").attr("type", "text")
-                .appendTo(td);
-
-            edit.val(f.image);
-            edit.focus();
-
-            var finish = function () {
-                var val = edit.val();
-                edit.remove();
-                image.appendTo(td);
-                socket.emit("updateEmote", {
-                    name: f.name,
-                    image: val
-                });
-            };
-
-            edit.blur(finish);
-            edit.keydown(function (ev) {
-                if (ev.keyCode === 13) {
-                    finish();
-                }
-            });
-        });
-    });
-}
-
 function formatTime(sec) {
     var h = Math.floor(sec / 3600) + "";
     var m = Math.floor((sec % 3600) / 60) + "";
@@ -3056,6 +3045,105 @@ function onEmoteClicked(emote) {
 
 window.EMOTELIST = new EmoteList("#emotelist", onEmoteClicked);
 window.EMOTELIST.sortAlphabetical = USEROPTS.emotelist_sort;
+
+function CSEmoteList(selector) {
+    EmoteList.call(this, selector);
+}
+
+CSEmoteList.prototype = Object.create(EmoteList.prototype);
+
+CSEmoteList.prototype.loadPage = function (page) {
+    var tbody = this.table.children[1];
+    tbody.innerHTML = "";
+
+    var start = page * this.itemsPerPage;
+    if (start >= this.emotes.length) {
+        return;
+    }
+    var end = Math.min(start + this.itemsPerPage, this.emotes.length);
+    var self = this;
+    this.page = page;
+
+    for (var i = start; i < end; i++) {
+        var row = document.createElement("tr");
+        tbody.appendChild(row);
+
+        (function (emote) {
+            // Add delete button
+            var tdDelete = document.createElement("td");
+            var btnDelete = document.createElement("button");
+            btnDelete.className = "btn btn-xs btn-danger";
+            var pennJillette = document.createElement("span");
+            pennJillette.className = "glyphicon glyphicon-trash";
+            btnDelete.appendChild(pennJillette);
+            tdDelete.appendChild(btnDelete);
+            row.appendChild(tdDelete);
+
+            btnDelete.onclick = function deleteEmote() {
+                document.getElementById("cs-emotes-newname").value = emote.name;
+                document.getElementById("cs-emotes-newimage").value = emote.image;
+                socket.emit("removeEmote", emote);
+            };
+
+            // Add emote name
+            // TODO: editable
+            var tdName = document.createElement("td");
+            var nameDisplay = document.createElement("code");
+            nameDisplay.textContent = emote.name;
+            tdName.appendChild(nameDisplay);
+            row.appendChild(tdName);
+
+            // Add emote image
+            var tdImage = document.createElement("td");
+            var urlDisplay = document.createElement("code");
+            urlDisplay.textContent = emote.image;
+            tdImage.appendChild(urlDisplay);
+            row.appendChild(tdImage);
+
+            // Add popover to display the image
+            var $urlDisplay = $(urlDisplay);
+            $urlDisplay.popover({
+                html: true,
+                trigger: "hover",
+                content: '<img src="' + emote.image + '" class="channel-emote">'
+            });
+
+            // Change the image for an emote
+            $urlDisplay.click(function (clickEvent) {
+                $(tdImage).find(".popover").remove();
+                $urlDisplay.detach();
+
+                var editInput = document.createElement("input");
+                editInput.className = "form-control";
+                editInput.type = "text";
+                editInput.value = emote.image;
+                tdImage.appendChild(editInput);
+                editInput.focus();
+
+                function save() {
+                    var val = editInput.value;
+                    tdImage.removeChild(editInput);
+                    tdImage.appendChild(urlDisplay);
+
+                    socket.emit("updateEmote", {
+                        name: emote.name,
+                        image: val
+                    });
+                }
+
+                editInput.onblur = save;
+                editInput.onkeyup = function (event) {
+                    if (event.keyCode === 13) {
+                        save();
+                    }
+                };
+            });
+        })(this.emotes[i]);
+    }
+};
+
+window.CSEMOTELIST = new CSEmoteList("#cs-emotes");
+window.CSEMOTELIST.sortAlphabetical = USEROPTS.emotelist_sort;
 
 function showChannelSettings() {
     hidePlayer();

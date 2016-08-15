@@ -44,6 +44,8 @@ $("#modflair").click(function () {
         m.removeClass("label-default")
             .addClass("label-success");
     }
+    $("#us-modflair").prop("checked", USEROPTS.modhat);
+    setOpt('modhat', USEROPTS.modhat);
 });
 
 $("#usercount").mouseenter(function (ev) {
@@ -392,7 +394,7 @@ function queue(pos, src) {
             if (data.id == null || data.type == null) {
                 makeAlert("Error", "Failed to parse link " + link +
                           ".  Please check that it is correct",
-                          "alert-danger")
+                          "alert-danger", true)
                     .insertAfter($("#addfromurl"));
             } else {
                 emitQueue.push({

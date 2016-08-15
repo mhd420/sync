@@ -35,7 +35,7 @@ Callbacks = {
             return;
         $("<div/>")
             .addClass("server-msg-disconnect")
-            .text("Disconnected from server.  Attempting reconnection...")
+            .text("Disconnected from server.")
             .appendTo($("#messagebuffer"));
         scrollChat();
     },
@@ -67,7 +67,8 @@ Callbacks = {
 
     announcement: function(data) {
         $("#announcements").html("");
-        makeAlert(data.title, data.text)
+        var signature = "<br>\u2014" + data.from;
+        var announcement = makeAlert(data.title, data.text + signature)
             .appendTo($("#announcements"));
     },
 
@@ -369,10 +370,6 @@ Callbacks = {
         CLIENT.rank = r;
         handlePermissionChange();
         if(SUPERADMIN && $("#setrank").length == 0) {
-            $("<a/>").attr("href", "/acp")
-                .attr("target", "_blank")
-                .text("ACP")
-                .appendTo($("<li/>").appendTo($(".nav")[0]));
             var li = $("<li/>").addClass("dropdown")
                 .attr("id", "setrank")
                 .appendTo($(".nav")[0]);
@@ -937,6 +934,8 @@ Callbacks = {
             })(i);
 
         }
+        $("<span/>").addClass("label label-default pull-right").data('timestamp',data.timestamp).appendTo(poll)
+            .text(new Date(data.timestamp).toTimeString().split(" ")[0]);
 
         poll.find(".btn").attr("disabled", !hasPermission("pollvote"));
     },
@@ -970,10 +969,8 @@ Callbacks = {
 
     emoteList: function (data) {
         loadEmotes(data);
-        var tbl = $("#cs-emotes table");
-        tbl.data("entries", data);
-        formatCSEmoteList();
         EMOTELIST.handleChange();
+        CSEMOTELIST.handleChange();
     },
 
     updateEmote: function (data) {
@@ -983,15 +980,16 @@ Callbacks = {
             if (CHANNEL.emotes[i].name === data.name) {
                 found = true;
                 CHANNEL.emotes[i] = data;
-                formatCSEmoteList();
                 break;
             }
         }
 
         if (!found) {
             CHANNEL.emotes.push(data);
-            formatCSEmoteList();
         }
+
+        EMOTELIST.handleChange();
+        CSEMOTELIST.handleChange();
     },
 
     removeEmote: function (data) {
@@ -1125,7 +1123,18 @@ function ioServerConnect(socketConfig) {
     window.socket = io(chosenServer.url, opts);
 }
 
-(function () {
+var USING_LETS_ENCRYPT = false;
+
+function initSocketIO(socketConfig) {
+    function genericConnectionError() {
+        var message = "The socket.io library could not be loaded from <code>" +
+                      source + "</code>.  Ensure that it is not being blocked " +
+                      "by a script blocking extension or firewall and try again.";
+        makeAlert("Error", message, "alert-danger")
+            .appendTo($("#announcements"));
+        Callbacks.disconnect();
+    }
+
     if (typeof io === "undefined") {
         var script = document.getElementById("socketio-js");
         var source = "unknown";
@@ -1133,21 +1142,70 @@ function ioServerConnect(socketConfig) {
             source = script.src;
         }
 
-        var message = "The socket.io library could not be loaded from <code>" +
-                      source + "</code>.  Ensure that it is not being blocked " +
-                      "by a script blocking extension or firewall and try again.";
-        makeAlert("Error", message, "alert-danger")
-            .appendTo($("#announcements"));
-        Callbacks.disconnect();
+        if (/^https/.test(source) && location.protocol === "http:"
+                && USING_LETS_ENCRYPT) {
+            checkLetsEncrypt(socketConfig, genericConnectionError);
+            return;
+        }
+
+        genericConnectionError();
         return;
     }
 
+    ioServerConnect(socketConfig);
+    setupCallbacks();
+}
+
+function checkLetsEncrypt(socketConfig, nonLetsEncryptError) {
+    var servers = socketConfig.servers.filter(function (server) {
+        return !server.secure && !server.ipv6Only
+    });
+
+    if (servers.length === 0) {
+        nonLetsEncryptError();
+        return;
+    }
+
+    $.ajax({
+        url: servers[0].url + "/socket.io/socket.io.js",
+        dataType: "script",
+        timeout: 10000
+    }).done(function () {
+        var message = "Your browser cannot connect securely because it does " +
+                      "not support the newer Let's Encrypt certificate " +
+                      "authority.  Click below to acknowledge and continue " +
+                      "connecting over an unencrypted connection.  See " +
+                      "<a href=\"https://community.letsencrypt.org/t/which-browsers-and-operating-systems-support-lets-encrypt/4394\" target=\"_blank\">here</a> " +
+                      "for more details.";
+        var connectionAlert = makeAlert("Error", message, "alert-danger")
+            .appendTo($("#announcements"));
+
+        var button = document.createElement("button");
+        button.className = "btn btn-default";
+        button.textContent = "Connect Anyways";
+
+        var alertBox = connectionAlert.find(".alert")[0];
+        alertBox.appendChild(document.createElement("hr"));
+        alertBox.appendChild(button);
+
+        button.onclick = function connectAnyways() {
+            ioServerConnect({
+                servers: servers
+            });
+            setupCallbacks();
+        };
+    }).error(function () {
+        nonLetsEncryptError();
+    });
+}
+
+(function () {
     $.getJSON("/socketconfig/" + CHANNEL.name + ".json")
         .done(function (socketConfig) {
-            ioServerConnect(socketConfig);
-            setupCallbacks();
+            initSocketIO(socketConfig);
         }).fail(function () {
-            makeAlert("Error", "Failed to retrieve socket.io configuration",
+            makeAlert("Error", "Failed to retrieve socket.io configuration.  " +
+                               "Please try again in a few minutes.",
                     "alert-danger")
                 .appendTo($("#announcements"));
             Callbacks.disconnect();
