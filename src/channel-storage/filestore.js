@@ -16,14 +16,15 @@ export class FileStore {
         return path.join(CHANDUMP_DIR, channelName);
     }
 
-    load(channelName) {
+    load(id, channelName) {
         const filename = this.filenameForChannel(channelName);
         return statAsync(filename).then(stats => {
             if (stats.size > SIZE_LIMIT) {
-                throw new ChannelStateSizeError('Channel state file is too large', {
+                return Promise.reject(
+                        new ChannelStateSizeError('Channel state file is too large', {
                     limit: SIZE_LIMIT,
                     actual: stats.size
-                });
+                }));
             } else {
                 return readFileAsync(filename);
             }
@@ -31,12 +32,12 @@ export class FileStore {
             try {
                 return JSON.parse(fileContents);
             } catch (e) {
-                throw new Error('Channel state file is not valid JSON: ' + e);
+                return Promise.reject(new Error('Channel state file is not valid JSON: ' + e));
             }
         });
     }
 
-    save(channelName, data) {
+    save(id, channelName, data) {
         const filename = this.filenameForChannel(channelName);
         const fileContents = new Buffer(JSON.stringify(data), 'utf8');
         if (fileContents.length > SIZE_LIMIT) {

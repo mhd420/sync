@@ -616,11 +616,6 @@ function rebuildPlaylist() {
 
 /* user settings menu */
 function showUserOptions() {
-    hidePlayer();
-    $("#useroptions").on("hidden.bs.modal", function () {
-        unhidePlayer();
-    });
-
     if (CLIENT.rank < 2) {
         $("a[href='#us-mod']").parent().hide();
     } else {
@@ -648,6 +643,7 @@ function showUserOptions() {
     $("#us-sendbtn").prop("checked", USEROPTS.chatbtn);
     $("#us-no-emotes").prop("checked", USEROPTS.no_emotes);
     $("#us-strip-image").prop("checked", USEROPTS.strip_image);
+    $("#us-chat-tab-method").val(USEROPTS.chat_tab_method);
 
     $("#us-modflair").prop("checked", USEROPTS.modhat);
     $("#us-shadowchat").prop("checked", USEROPTS.show_shadowchat);
@@ -682,6 +678,7 @@ function saveUserOptions() {
     USEROPTS.chatbtn              = $("#us-sendbtn").prop("checked");
     USEROPTS.no_emotes            = $("#us-no-emotes").prop("checked");
     USEROPTS.strip_image          = $("#us-strip-image").prop("checked");
+    USEROPTS.chat_tab_method      = $("#us-chat-tab-method").val();
 
     if (CLIENT.rank >= 2) {
         USEROPTS.modhat      = $("#us-modflair").prop("checked");
@@ -761,18 +758,23 @@ function applyOpts() {
     }
 }
 
-function showPollMenu() {
-    function parseTimeout(t) {
-        var m;
-        if (m = t.match(/^(\d+):(\d+)$/)) {
-            return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-        } else if (m = t.match(/^(\d+)$/)) {
-            return parseInt(m[1], 10);
-        } else {
-            throw new Error("Invalid timeout value '" + t + "'");
-        }
+function parseTimeout(t) {
+    var m;
+    if (m = t.match(/^(\d+):(\d+):(\d+)$/)) {
+        // HH:MM:SS
+        return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+    } else if (m = t.match(/^(\d+):(\d+)$/)) {
+        // MM:SS
+        return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    } else if (m = t.match(/^(\d+)$/)) {
+        // Seconds
+        return parseInt(m[1], 10);
+    } else {
+        throw new Error("Invalid timeout value '" + t + "'");
     }
+}
 
+function showPollMenu() {
     $("#pollwrap .poll-menu").remove();
     var menu = $("<div/>").addClass("well poll-menu")
         .prependTo($("#pollwrap"));
@@ -932,6 +934,8 @@ function handleModPermissions() {
     $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
     $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
     $("#cs-playlist_max_per_user").val(CHANNEL.opts.playlist_max_per_user || 0);
+    $("#cs-new_user_chat_delay").val(formatTime(CHANNEL.opts.new_user_chat_delay || 0));
+    $("#cs-new_user_chat_link_delay").val(formatTime(CHANNEL.opts.new_user_chat_link_delay || 0));
     (function() {
         if(typeof CHANNEL.opts.maxlength != "number") {
             $("#cs-maxlength").val("");
@@ -1292,7 +1296,14 @@ function parseMediaLink(url) {
         };
     }
 
-    if((m = url.match(/twitch\.tv\/([^\?&#]+)/))) {
+    if((m = url.match(/twitch\.tv\/(?:.*?)\/([cv])\/(\d+)/))) {
+        return {
+            id: m[1] + m[2],
+            type: "tv"
+        };
+    }
+
+    if((m = url.match(/twitch\.tv\/([\w-]+)/))) {
         return {
             id: m[1],
             type: "tw"
@@ -1417,7 +1428,13 @@ function parseMediaLink(url) {
     /* Raw file */
     var tmp = url.split("?")[0];
     if (tmp.match(/^https?:\/\//)) {
-        if (tmp.match(/\.(mp4|flv|webm|og[gv]|mp3|mov)$/)) {
+        if (tmp.match(/^http:/)) {
+            Callbacks.queueFail({
+                link: url,
+                msg: "Raw files must begin with 'https'.  Plain http is not supported."
+            });
+            throw new Error("ERROR_QUEUE_HTTP");
+        } else if (tmp.match(/\.(mp4|flv|webm|og[gv]|mp3|mov|m4a)$/)) {
             return {
                 id: url,
                 type: "fi"
@@ -1426,8 +1443,9 @@ function parseMediaLink(url) {
             Callbacks.queueFail({
                 link: url,
                 msg: "The file you are attempting to queue does not match the supported " +
-                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov."
+                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a."
             });
+            // Lol I forgot about this hack
             throw new Error("ERROR_QUEUE_UNSUPPORTED_EXTENSION");
         }
     }
@@ -2032,21 +2050,6 @@ function waitUntilDefined(obj, key, fn) {
     fn();
 }
 
-function hidePlayer() {
-    /* 2015-09-16
-     * Originally used to hide the player while a modal was open because of
-     * certain flash videos that always rendered on top.  Seems to no longer
-     * be an issue.  Uncomment this if it is.
-    if (!PLAYER) return;
-
-    $("#ytapiplayer").hide();
-    */
-}
-
-function unhidePlayer() {
-    //$("#ytapiplayer").show();
-}
-
 function chatDialog(div) {
     var parent = $("<div/>").addClass("profile-box")
         .css({
@@ -2087,6 +2090,44 @@ function errDialog(err) {
         .css("top", y + "px")
         .css("position", "absolute");
     return div;
+}
+
+/**
+ * 2016-12-08
+ * I *promise* that one day I will actually split this file into submodules
+ * -cal
+ */
+function modalAlert(options) {
+    if (typeof options !== "object" || options === null) {
+        throw new Error("modalAlert() called without required parameter");
+    }
+
+    var modal = makeModal();
+    modal.addClass("cytube-modal-alert");
+    modal.removeClass("fade");
+    modal.find(".modal-dialog").addClass("modal-dialog-nonfluid");
+
+    if (options.title) {
+        $("<h3/>").text(options.title).appendTo(modal.find(".modal-header"));
+    }
+
+    var contentDiv = $("<div/>").addClass("modal-body");
+    if (options.htmlContent) {
+        contentDiv.html(options.htmlContent);
+    } else if (options.textContent) {
+        contentDiv.text(options.textContent);
+    }
+
+    contentDiv.appendTo(modal.find(".modal-content"));
+
+    var footer = $("<div/>").addClass("modal-footer");
+    var okButton = $("<button/>").addClass("btn btn-primary")
+            .attr({ "data-dismiss": "modal"})
+            .text("OK")
+            .appendTo(footer);
+    footer.appendTo(modal.find(".modal-content"));
+    modal.appendTo(document.body);
+    modal.modal();
 }
 
 function queueMessage(data, type) {
@@ -2223,7 +2264,6 @@ function makeModal() {
         .appendTo(head);
 
     wrap.on("hidden.bs.modal", function () {
-        unhidePlayer();
         wrap.remove();
     });
     return wrap;
@@ -2788,15 +2828,30 @@ function formatScriptAccessPrefs() {
 
     var channels = Object.keys(JSPREF).sort();
     channels.forEach(function (channel) {
-        var parts = channel.split("_");
-        if (!parts[1].match(/^(external|embedded)$/)) {
+        var idx = String(channel).lastIndexOf("_");
+        if (idx < 0) {
+            // Invalid
+            console.error("Channel JS pref: invalid key '" + channel + "', deleting it");
+            delete JSPREF[channel];
+            setOpt("channel_js_pref", JSPREF);
+            return;
+        }
+
+        var channelName = channel.substring(0, idx);
+        var prefType = channel.substring(idx + 1);
+        console.log(channelName, prefType);
+        if (prefType !== "external" && prefType !== "embedded") {
+            // Invalid
+            console.error("Channel JS pref: invalid key '" + channel + "', deleting it");
+            delete JSPREF[channel];
+            setOpt("channel_js_pref", JSPREF);
             return;
         }
 
         var pref = JSPREF[channel];
         var tr = $("<tr/>").appendTo(tbl);
-        $("<td/>").text(parts[0]).appendTo(tr);
-        $("<td/>").text(parts[1]).appendTo(tr);
+        $("<td/>").text(channelName).appendTo(tr);
+        $("<td/>").text(prefType).appendTo(tr);
 
         var pref_td = $("<td/>").appendTo(tr);
         var allow_label = $("<label/>").addClass("radio-inline")
@@ -3146,11 +3201,6 @@ window.CSEMOTELIST = new CSEmoteList("#cs-emotes");
 window.CSEMOTELIST.sortAlphabetical = USEROPTS.emotelist_sort;
 
 function showChannelSettings() {
-    hidePlayer();
-    $("#channeloptions").on("hidden.bs.modal", function () {
-        unhidePlayer();
-    });
-
     $("#channeloptions").modal();
 }
 
@@ -3190,4 +3240,86 @@ function stopQueueSpinner(data) {
     if (shouldRemove) {
         $("#queueprogress").remove();
     }
+}
+
+function maybePromptToUpgradeUserscript() {
+    if (document.getElementById('prompt-upgrade-drive-userscript')) {
+        return;
+    }
+
+    if (!window.hasDriveUserscript) {
+        return;
+    }
+
+    var currentVersion = [1, 3];
+    var userscriptVersion = window.driveUserscriptVersion;
+    if (!userscriptVersion) {
+        userscriptVersion = '1.0';
+    }
+    userscriptVersion = userscriptVersion.split('.').map(function (part) {
+        return parseInt(part, 10);
+    });
+
+    var older = false;
+    for (var i = 0; i < currentVersion.length; i++) {
+        if (userscriptVersion[i] < currentVersion[i]) {
+            older = true;
+        }
+    }
+
+    if (!older) {
+        return;
+    }
+
+    var alertBox = document.createElement('div');
+    alertBox.id = 'prompt-upgrade-drive-userscript';
+    alertBox.className = 'alert alert-info'
+    alertBox.innerHTML = 'A newer version of the Google Drive userscript is available.';
+    alertBox.appendChild(document.createElement('br'));
+    var infoLink = document.createElement('a');
+    infoLink.className = 'btn btn-info';
+    infoLink.href = '/google_drive_userscript';
+    infoLink.textContent = 'Click here for installation instructions';
+    infoLink.target = '_blank';
+    alertBox.appendChild(infoLink);
+
+    var closeButton = document.createElement('button');
+    closeButton.className = 'close pull-right';
+    closeButton.innerHTML = '&times;';
+    closeButton.onclick = function () {
+        alertBox.parentNode.removeChild(alertBox);
+    }
+    alertBox.insertBefore(closeButton, alertBox.firstChild)
+    document.getElementById('videowrap').appendChild(alertBox);
+}
+
+function backoffRetry(fn, cb, options) {
+    var jitter = options.jitter || 0;
+    var factor = options.factor || 1;
+    var isRetryable = options.isRetryable || function () { return true; };
+    var tries = 0;
+
+    function callback(error, result) {
+        tries++;
+        factor *= factor;
+        if (error) {
+            if (tries >= options.maxTries) {
+                console.log('Max tries exceeded');
+                cb(error, result);
+            } else if (isRetryable(error)) {
+                var offset = Math.random() * jitter;
+                var delay = options.delay * factor + offset;
+                console.log('Retrying on error: ' + error);
+                console.log('Waiting ' + delay + ' ms before retrying');
+
+                setTimeout(function () {
+                    fn(callback);
+                }, delay);
+            }
+        } else {
+            cb(error, result);
+        }
+    }
+
+    fn(callback);
 }

@@ -49,7 +49,6 @@ Callbacks = {
     },
 
     costanza: function (data) {
-        hidePlayer();
         $("#costanza-modal").modal("hide");
         var modal = makeModal();
         modal.attr("id", "costanza-modal")
@@ -61,7 +60,6 @@ Callbacks = {
             .appendTo(body);
 
         $("<strong/>").text(data.msg).appendTo(body);
-        hidePlayer();
         modal.modal();
     },
 
@@ -86,6 +84,22 @@ Callbacks = {
             .text(data.action + ": " + data.msg)
             .appendTo($("#messagebuffer"));
         scrollChat();
+    },
+
+    spamFiltered: function(data) {
+        var message = "Spam Filtered.";
+        switch (data.reason) {
+            case "NEW_USER_CHAT":
+                message = "Your account is too new to chat in this channel.  " +
+                        "Please wait a while and try again.";
+                break;
+            case "NEW_USER_CHAT_LINK":
+                message = "Your account is too new to post links in this channel.  " +
+                        "Please wait a while and try again.";
+                break;
+        }
+
+        errDialog(message);
     },
 
     needPassword: function (wrongpw) {
@@ -1036,6 +1050,38 @@ Callbacks = {
         HAS_CONNECTED_BEFORE = false;
         ioServerConnect(socketConfig);
         setupCallbacks();
+    },
+
+    validationError: function (error) {
+        var target = $(error.target);
+        target.parent().find(".text-danger").remove();
+
+        var formGroup = target.parent();
+        while (!formGroup.hasClass("form-group") && formGroup.length > 0) {
+            formGroup = formGroup.parent();
+        }
+
+        if (formGroup.length > 0) {
+            formGroup.addClass("has-error");
+        }
+
+        $("<p/>").addClass("text-danger")
+                .text(error.message)
+                .insertAfter(target);
+    },
+
+    validationPassed: function (data) {
+        var target = $(data.target);
+        target.parent().find(".text-danger").remove();
+
+        var formGroup = target.parent();
+        while (!formGroup.hasClass("form-group") && formGroup.length > 0) {
+            formGroup = formGroup.parent();
+        }
+
+        if (formGroup.length > 0) {
+            formGroup.removeClass("has-error");
+        }
     }
 }
 

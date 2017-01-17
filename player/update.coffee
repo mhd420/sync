@@ -2,13 +2,14 @@ TYPE_MAP =
     yt: YouTubePlayer
     vi: VimeoPlayer
     dm: DailymotionPlayer
-    gd: GoogleDriveYouTubePlayer
+    gd: GoogleDrivePlayer
     gp: VideoJSPlayer
     fi: FilePlayer
     jw: FilePlayer
     sc: SoundCloudPlayer
     li: LivestreamPlayer
     tw: TwitchPlayer
+    tv: TwitchPlayer
     cu: CustomEmbedPlayer
     rt: RTMPPlayer
     hb: HitboxPlayer
@@ -28,14 +29,6 @@ window.loadMediaPlayer = (data) ->
     if data.meta.direct and data.type != 'gd'
         try
             window.PLAYER = new VideoJSPlayer(data)
-        catch e
-            console.error e
-    else if data.type is 'gd'
-        try
-            if data.meta.html5hack
-                window.PLAYER = new VideoJSPlayer(data)
-            else
-                window.PLAYER = new GoogleDriveYouTubePlayer(data)
         catch e
             console.error e
     else if data.type of TYPE_MAP

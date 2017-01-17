@@ -84,12 +84,17 @@ function Channel(name) {
     this.users = [];
     this.refCounter = new ReferenceCounter(this);
     this.flags = 0;
+    this.id = 0;
     this.broadcastUsercount = throttle(() => {
         this.broadcastAll("usercount", this.users.length);
     }, USERCOUNT_THROTTLE);
     var self = this;
     db.channels.load(this, function (err) {
         if (err && err !== "Channel is not registered") {
+            self.emit("loadFail", "Failed to load channel data from the database");
+            // Force channel to be unloaded, so that it will load properly when
+            // the database connection comes back
+            self.emit("empty");
             return;
         } else {
             self.initModules();
@@ -202,7 +207,7 @@ Channel.prototype.loadState = function () {
         self.setFlag(Flags.C_READY | Flags.C_ERROR);
     }
 
-    ChannelStore.load(this.uniqueName).then(data => {
+    ChannelStore.load(this.id, this.uniqueName).then(data => {
         Object.keys(this.modules).forEach(m => {
             try {
                 this.modules[m].load(data);
@@ -256,7 +261,8 @@ Channel.prototype.saveState = function () {
         this.modules[m].save(data);
     });
 
-    return ChannelStore.save(this.uniqueName, data).catch(ChannelStateSizeError, err => {
+    return ChannelStore.save(this.id, this.uniqueName, data)
+            .catch(ChannelStateSizeError, err => {
         this.users.forEach(u => {
             if (u.account.effectiveRank >= 2) {
                 u.socket.emit("warnLargeChandump", {
@@ -323,40 +329,41 @@ Channel.prototype.joinUser = function (user, data) {
         }
 
         user.channel = self;
-        if (self.is(Flags.C_REGISTERED)) {
-            user.refreshAccount(function (err, account) {
-                if (err) {
-                    Logger.errlog.log("user.refreshAccount failed at Channel.joinUser");
-                    Logger.errlog.log(err.stack);
-                    self.refCounter.unref("Channel::user");
-                    return;
-                }
-
-                afterAccount();
-            });
-        } else {
-            afterAccount();
-        }
-
-        function afterAccount() {
-            if (user.socket.disconnected) {
-                self.refCounter.unref("Channel::user");
-                return;
-            } else if (self.dead) {
-                return;
+        user.waitFlag(Flags.U_LOGGED_IN, () => {
+            if (user.is(Flags.U_REGISTERED)) {
+                db.channels.getRank(self.name, user.getName(), (error, rank) => {
+                    if (!error) {
+                        user.setChannelRank(rank);
+                        user.setFlag(Flags.U_HAS_CHANNEL_RANK);
+                        if (user.inChannel()) {
+                            self.broadcastAll("setUserRank", {
+                                name: user.getName(),
+                                rank: rank
+                            });
+                        }
+                    }
+                });
             }
+        });
 
-            self.checkModules("onUserPreJoin", [user, data], function (err, result) {
-                if (result === ChannelModule.PASSTHROUGH) {
-                    self.acceptUser(user);
-                } else {
-                    user.channel = null;
-                    user.account.channelRank = 0;
-                    user.account.effectiveRank = user.account.globalRank;
-                    self.refCounter.unref("Channel::user");
-                }
-            });
+        if (user.socket.disconnected) {
+            self.refCounter.unref("Channel::user");
+            return;
+        } else if (self.dead) {
+            return;
         }
+
+        self.checkModules("onUserPreJoin", [user, data], function (err, result) {
+            if (result === ChannelModule.PASSTHROUGH) {
+                user.channel = self;
+                self.acceptUser(user);
+            } else {
+                user.channel = null;
+                user.account.channelRank = 0;
+                user.account.effectiveRank = user.account.globalRank;
+                self.refCounter.unref("Channel::user");
+            }
+        });
     });
 };
 
@@ -394,7 +401,6 @@ Channel.prototype.acceptUser = function (user) {
         if (user.account.globalRank === 0) loginStr += " (guest)";
         loginStr += " (aliases: " + user.account.aliases.join(",") + ")";
         self.logger.log(loginStr);
-
         self.sendUserJoin(self.users, user);
     });
 

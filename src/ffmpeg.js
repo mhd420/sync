@@ -20,7 +20,8 @@ var acceptedCodecs = {
 
 var acceptedAudioCodecs = {
     "mp3": true,
-    "vorbis": true
+    "vorbis": true,
+    "aac": true
 };
 
 var audioOnlyContainers = {
@@ -39,7 +40,7 @@ function initFFLog() {
 }
 
 function fixRedirectIfNeeded(urldata, redirect) {
-    if (!/^https?:/.test(redirect)) {
+    if (!/^https:/.test(redirect)) {
         redirect = urldata.protocol + "//" + urldata.host + redirect;
     }
 
@@ -73,8 +74,8 @@ function translateStatusCode(statusCode) {
 function testUrl(url, cb, redirCount) {
     if (!redirCount) redirCount = 0;
     var data = urlparse.parse(url);
-    if (!/https?:/.test(data.protocol)) {
-        return cb("Only links starting with 'http://' or 'https://' are supported " +
+    if (!/https:/.test(data.protocol)) {
+        return cb("Only links starting with 'https://' are supported " +
                   "for raw audio/video support");
     }
 
@@ -314,9 +315,9 @@ exports.query = function (filename, cb) {
         return cb("Raw file playback is not enabled on this server");
     }
 
-    if (!filename.match(/^https?:\/\//)) {
-        return cb("Raw file playback is only supported for links accessible via HTTP " +
-                  "or HTTPS.  Ensure that the link begins with 'http://' or 'https://'");
+    if (!filename.match(/^https:\/\//)) {
+        return cb("Raw file playback is only supported for links accessible via HTTPS. " +
+                  "Ensure that the link begins with 'https://'.");
     }
 
     testUrl(filename, function (err) {

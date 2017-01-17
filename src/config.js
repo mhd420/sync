@@ -90,13 +90,7 @@ var defaults = {
         channels: ["^(.*?[-_])?admin(istrator)?([-_].*)?$", "^(.*?[-_])?owner([-_].*)?$"],
         pagetitles: []
     },
-    "contacts": [
-        {
-            name: "calzoneman",
-            title: "Developer",
-            email: "cyzon@cytu.be"
-        }
-    ],
+    "contacts": [],
     "aggressive-gc": false,
     playlist: {
         "max-items": 4000,
@@ -123,7 +117,8 @@ var defaults = {
     },
     "google-drive": {
         "html5-hack-enabled": false
-    }
+    },
+    "twitch-client-id": null
 };
 
 /**
@@ -379,6 +374,21 @@ function preprocessConfig(cfg) {
             "information on registering an API key.");
     }
 
+    if (cfg["twitch-client-id"]) {
+        require("cytube-mediaquery/lib/provider/twitch-vod").setClientID(
+                cfg["twitch-client-id"]);
+    } else {
+        Logger.errlog.log("Warning: No Twitch Client ID set.  Twitch VOD links will " +
+            "not work.  See twitch-client-id in config.template.yaml and " +
+            "https://github.com/justintv/Twitch-API/blob/master/authentication.md#developer-setup" +
+            "for more information on registering a client ID");
+    }
+
+    // Remove calzoneman from contact config (old default)
+    cfg.contacts = cfg.contacts.filter(contact => {
+        return contact.name !== 'calzoneman';
+    });
+
     return cfg;
 }
 
@@ -403,4 +413,27 @@ exports.get = function (key) {
     }
 
     return obj[current];
+};
+
+/**
+ * Sets a configuration value with the given key
+ *
+ * Accepts a dot-separated key for nested values, e.g. "http.port"
+ * Throws an error if a nonexistant key is requested
+ */
+exports.set = function (key, value) {
+    var obj = cfg;
+    var keylist = key.split(".");
+    var current = keylist.shift();
+    var path = current;
+    while (keylist.length > 0) {
+        if (!(current in obj)) {
+            throw new Error("Nonexistant config key '" + path + "." + current + "'");
+        }
+        obj = obj[current];
+        current = keylist.shift();
+        path += "." + current;
+    }
+
+    obj[current] = value;
 };

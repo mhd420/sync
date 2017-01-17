@@ -10,17 +10,17 @@ module.exports = {
         Logger.syslog.log("Starting CyTube v" + VERSION);
         var chanlogpath = path.join(__dirname, "../chanlogs");
         fs.exists(chanlogpath, function (exists) {
-            exists || fs.mkdir(chanlogpath);
+            exists || fs.mkdirSync(chanlogpath);
         });
 
         var chandumppath = path.join(__dirname, "../chandump");
         fs.exists(chandumppath, function (exists) {
-            exists || fs.mkdir(chandumppath);
+            exists || fs.mkdirSync(chandumppath);
         });
 
         var gdvttpath = path.join(__dirname, "../google-drive-subtitles");
         fs.exists(gdvttpath, function (exists) {
-            exists || fs.mkdir(gdvttpath);
+            exists || fs.mkdirSync(gdvttpath);
         });
         singleton = new Server();
         return singleton;
@@ -220,12 +220,20 @@ Server.prototype.getChannel = function (name) {
     return c;
 };
 
-Server.prototype.unloadChannel = function (chan) {
+Server.prototype.unloadChannel = function (chan, options) {
     if (chan.dead) {
         return;
     }
 
-    chan.saveState();
+    if (!options) {
+        options = {};
+    }
+
+    if (!options.skipSave) {
+        chan.saveState().catch(error => {
+            Logger.errlog.log(`Failed to save /r/${chan.name} for unload: ${error.stack}`);
+        });
+    }
 
     chan.logger.log("[init] Channel shutting down");
     chan.logger.close();
@@ -310,13 +318,17 @@ Server.prototype.setAnnouncement = function (data) {
 
 Server.prototype.shutdown = function () {
     Logger.syslog.log("Unloading channels");
-    Promise.reduce(this.channels, (_, channel) => {
-        return channel.saveState().tap(() => {
-            Logger.syslog.log(`Saved /r/${channel.name}`);
-        }).catch(err => {
-            Logger.errlog.log(`Failed to save /r/${channel.name}: ${err.stack}`);
-        });
-    }).then(() => {
+    Promise.map(this.channels, channel => {
+        try {
+            return channel.saveState().tap(() => {
+                Logger.syslog.log(`Saved /r/${channel.name}`);
+            }).catch(err => {
+                Logger.errlog.log(`Failed to save /r/${channel.name}: ${err.stack}`);
+            });
+        } catch (error) {
+            Logger.errlog.log(`Failed to save channel: ${error.stack}`);
+        }
+    }, { concurrency: 5 }).then(() => {
         Logger.syslog.log("Goodbye");
         process.exit(0);
     }).catch(err => {
@@ -325,22 +337,9 @@ Server.prototype.shutdown = function () {
     });
 };
 
-Server.prototype.reloadPartitionMap = function () {
-    if (!Config.get("enable-partition")) {
-        return;
-    }
-
-    var config;
-    try {
-        config = this.initModule.loadPartitionMap();
-    } catch (error) {
-        return;
-    }
-
-    this.initModule.partitionConfig.config = config.config;
-
+Server.prototype.handlePartitionMapChange = function () {
     const channels = Array.prototype.slice.call(this.channels);
-    Promise.reduce(channels, (_, channel) => {
+    Promise.map(channels, channel => {
         if (channel.dead) {
             return;
         }
@@ -357,10 +356,21 @@ Server.prototype.reloadPartitionMap = function () {
                     } catch (error) {
                     }
                 });
-                this.unloadChannel(channel);
+                this.unloadChannel(channel, { skipSave: true });
+            }).catch(error => {
+                Logger.errlog.log(`Failed to unload /r/${channel.name} for ` +
+                                  `partition map flip: ${error.stack}`);
             });
         }
-    }, 0).then(() => {
+    }, { concurrency: 5 }).then(() => {
         Logger.syslog.log("Partition reload complete");
     });
+};
+
+Server.prototype.reloadPartitionMap = function () {
+    if (!Config.get("enable-partition")) {
+        return;
+    }
+
+    this.initModule.getPartitionMapReloader().reload();
 };

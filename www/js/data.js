@@ -68,6 +68,7 @@ var NO_STORAGE = typeof localStorage == "undefined" || localStorage === null;
 var SOCKETIO_CONNECT_ERROR_COUNT = 0;
 var HAS_CONNECTED_BEFORE = false;
 var IMAGE_MATCH = /<img\s[^>]*?src\s*=\s*['\"]([^'\"]*?)['\"][^>]*?>/gi;
+var CyTube = {};
 
 function getOpt(k) {
     var v = NO_STORAGE ? readCookie(k) : localStorage.getItem(k);
@@ -122,7 +123,8 @@ var USEROPTS = {
     show_shadowchat      : getOrDefault("show_shadowchat", false),
     emotelist_sort       : getOrDefault("emotelist_sort", true),
     no_emotes            : getOrDefault("no_emotes", false),
-    strip_image          : getOrDefault("strip_image", false)
+    strip_image          : getOrDefault("strip_image", false),
+    chat_tab_method      : getOrDefault("chat_tab_method", "Cycle options")
 };
 
 /* Backwards compatibility check */
@@ -167,6 +169,16 @@ var NO_WEBSOCKETS = USEROPTS.altsocket;
 var NO_VIMEO = Boolean(location.host.match("cytu.be"));
 
 var JSPREF = getOpt("channel_js_pref") || {};
+// Dunno why this happens
+if (typeof JSPREF !== "object" || JSPREF === null) {
+    try {
+        JSPREF = JSON.parse(JSPREF);
+    } catch (e) {
+        console.error("JSPREF is bugged: " + e + " (" + JSPREF + ")");
+        JSPREF = {};
+        setOpt("channel_js_pref", JSPREF);
+    }
+}
 
 var Rank = {
     Guest: 0,
@@ -216,3 +228,5 @@ function eraseCookie(name) {
 
 /* to be implemented in callbacks.js */
 function setupCallbacks() { }
+
+window.enableCyTubeGoogleDriveUserscriptDebug = getOrDefault("cytube_drive_debug", false);

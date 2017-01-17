@@ -146,6 +146,7 @@ module.exports = {
         }
         app.use(cookieParser(webConfig.getCookieSecret()));
         app.use(csrf.init(webConfig.getCookieDomain()));
+        app.use('/r/:channel', require('./middleware/ipsessioncookie').ipSessionCookieMiddleware);
         initializeLog(app);
         require('./middleware/authorize')(app, session);
 
@@ -161,6 +162,13 @@ module.exports = {
             if (!fs.existsSync(cacheDir)) {
                 fs.mkdirSync(cacheDir);
             }
+            app.use((req, res, next) => {
+                if (/\.user\.js/.test(req.url)) {
+                    res._no_minify = true;
+                }
+
+                next();
+            });
             app.use(require('express-minify')({
                 cache: cacheDir
             }));
@@ -178,6 +186,7 @@ module.exports = {
         require('./account').init(app);
         require('./acp').init(app);
         require('../google2vtt').attach(app);
+        require('./routes/google_drive_userscript')(app);
         app.use(serveStatic(path.join(__dirname, '..', '..', 'www'), {
             maxAge: webConfig.getCacheTTL()
         }));

@@ -1,5 +1,5 @@
 (function() {
-  var CUSTOM_EMBED_WARNING, CustomEmbedPlayer, DEFAULT_ERROR, DailymotionPlayer, EmbedPlayer, FilePlayer, GoogleDriveYouTubePlayer, HITBOX_ERROR, HLSPlayer, HitboxPlayer, ImgurPlayer, LivestreamPlayer, Player, RTMPPlayer, SoundCloudPlayer, TYPE_MAP, TwitchPlayer, USTREAM_ERROR, UstreamPlayer, VideoJSPlayer, VimeoPlayer, YouTubePlayer, codecToMimeType, genParam, sortSources,
+  var CUSTOM_EMBED_WARNING, CustomEmbedPlayer, DEFAULT_ERROR, DailymotionPlayer, EmbedPlayer, FilePlayer, GoogleDrivePlayer, GoogleDriveYouTubePlayer, HLSPlayer, HitboxPlayer, ImgurPlayer, LivestreamPlayer, Player, RTMPPlayer, SoundCloudPlayer, TYPE_MAP, TwitchPlayer, UstreamPlayer, VideoJSPlayer, VimeoPlayer, YouTubePlayer, codecToMimeType, genParam, sortSources,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -503,8 +503,7 @@
       if (!(this instanceof VideoJSPlayer)) {
         return new VideoJSPlayer(data);
       }
-      this.setMediaProperties(data);
-      this.loadPlayer(data);
+      this.load(data);
     }
 
     VideoJSPlayer.prototype.loadPlayer = function(data) {
@@ -559,7 +558,10 @@
                 if (_this.sourceIdx < _this.sources.length) {
                   return _this.player.src(_this.sources[_this.sourceIdx]);
                 } else {
-                  return console.error('Out of sources, video will not play');
+                  console.error('Out of sources, video will not play');
+                  if (_this.mediaType === 'gd' && !window.hasDriveUserscript) {
+                    return window.promptToInstallDriveUserscript();
+                  }
                 }
               }
             });
@@ -666,6 +668,56 @@
 
   })(Player);
 
+  window.GoogleDrivePlayer = GoogleDrivePlayer = (function(superClass) {
+    extend(GoogleDrivePlayer, superClass);
+
+    function GoogleDrivePlayer(data) {
+      if (!(this instanceof GoogleDrivePlayer)) {
+        return new GoogleDrivePlayer(data);
+      }
+      GoogleDrivePlayer.__super__.constructor.call(this, data);
+    }
+
+    GoogleDrivePlayer.prototype.load = function(data) {
+      if (!window.hasDriveUserscript && !data.meta.direct) {
+        window.promptToInstallDriveUserscript();
+      } else if (window.hasDriveUserscript) {
+        window.maybePromptToUpgradeUserscript();
+      }
+      if (typeof window.getGoogleDriveMetadata === 'function') {
+        return setTimeout((function(_this) {
+          return function() {
+            return backoffRetry(function(cb) {
+              return window.getGoogleDriveMetadata(data.id, cb);
+            }, function(error, metadata) {
+              var alertBox;
+              if (error) {
+                console.error(error);
+                alertBox = window.document.createElement('div');
+                alertBox.className = 'alert alert-danger';
+                alertBox.textContent = error;
+                return document.getElementById('ytapiplayer').appendChild(alertBox);
+              } else {
+                data.meta.direct = metadata.videoMap;
+                return GoogleDrivePlayer.__super__.load.call(_this, data);
+              }
+            }, {
+              maxTries: 3,
+              delay: 1000,
+              factor: 1.2,
+              jitter: 500
+            });
+          };
+        })(this), Math.random() * 1000);
+      } else {
+        return GoogleDrivePlayer.__super__.load.call(this, data);
+      }
+    };
+
+    return GoogleDrivePlayer;
+
+  })(VideoJSPlayer);
+
   codecToMimeType = function(codec) {
     switch (codec) {
       case 'mov/h264':
@@ -681,6 +733,8 @@
         return 'audio/mp3';
       case 'vorbis':
         return 'audio/ogg';
+      case 'aac':
+        return 'audio/aac';
       default:
         return 'video/flv';
     }
@@ -848,7 +902,7 @@
 
   })(Player);
 
-  DEFAULT_ERROR = 'You are currently connected via HTTPS but the embedded content uses non-secure plain HTTP.  Your browser therefore blocks it from loading due to mixed content policy.  To fix this, embed the video using a secure link if available (https://...), or load this page over plain HTTP by replacing "https://" with "http://" in the address bar (your websocket will still be secured using HTTPS, but this will permit non-secure content to load).';
+  DEFAULT_ERROR = 'You are currently connected via HTTPS but the embedded content uses non-secure plain HTTP.  Your browser therefore blocks it from loading due to mixed content policy.  To fix this, embed the video using a secure link if available (https://...), or find another source for the content.';
 
   genParam = function(name, value) {
     return $('<param/>').attr({
@@ -925,18 +979,6 @@
 
   })(Player);
 
-  window.twitchEventCallback = function(events) {
-    if (!(PLAYER instanceof TwitchPlayer)) {
-      return false;
-    }
-    return events.forEach(function(event) {
-      if (event.event === 'playerInit') {
-        PLAYER.twitch.unmute();
-        return PLAYER.twitch.ready = true;
-      }
-    });
-  };
-
   window.TwitchPlayer = TwitchPlayer = (function(superClass) {
     extend(TwitchPlayer, superClass);
 
@@ -944,23 +986,160 @@
       if (!(this instanceof TwitchPlayer)) {
         return new TwitchPlayer(data);
       }
-      this.load(data);
+      this.setMediaProperties(data);
+      waitUntilDefined(window, 'Twitch', (function(_this) {
+        return function() {
+          return waitUntilDefined(Twitch, 'Player', function() {
+            return _this.init(data);
+          });
+        };
+      })(this));
     }
 
+    TwitchPlayer.prototype.init = function(data) {
+      var options;
+      removeOld();
+      if (data.type === 'tv') {
+        options = {
+          video: data.id
+        };
+      } else {
+        options = {
+          channel: data.id
+        };
+      }
+      this.twitch = new Twitch.Player('ytapiplayer', options);
+      return this.twitch.addEventListener(Twitch.Player.READY, (function(_this) {
+        return function() {
+          _this.setVolume(VOLUME);
+          _this.twitch.setQuality(_this.mapQuality(USEROPTS.default_quality));
+          _this.twitch.addEventListener(Twitch.Player.PLAY, function() {
+            _this.paused = false;
+            if (CLIENT.leader) {
+              return sendVideoUpdate();
+            }
+          });
+          _this.twitch.addEventListener(Twitch.Player.PAUSE, function() {
+            _this.paused = true;
+            if (CLIENT.leader) {
+              return sendVideoUpdate();
+            }
+          });
+          return _this.twitch.addEventListener(Twitch.Player.ENDED, function() {
+            if (CLIENT.leader) {
+              return socket.emit('playNext');
+            }
+          });
+        };
+      })(this));
+    };
+
     TwitchPlayer.prototype.load = function(data) {
-      data.meta.embed = {
-        src: '//www-cdn.jtvnw.net/swflibs/TwitchPlayer.swf',
-        tag: 'object',
-        params: {
-          flashvars: "embed=1&hostname=localhost&channel=" + data.id + "& eventsCallback=twitchEventCallback&auto_play=true&start_volume=" + (Math.floor(VOLUME * 100))
+      var error;
+      this.setMediaProperties(data);
+      try {
+        if (data.type === 'tv') {
+          return this.twitch.setVideo(data.id);
+        } else {
+          return this.twitch.setChannel(data.id);
         }
-      };
-      return TwitchPlayer.__super__.load.call(this, data);
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.pause = function() {
+      var error;
+      try {
+        this.twitch.pause();
+        return this.paused = true;
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.play = function() {
+      var error;
+      try {
+        this.twitch.play();
+        return this.paused = false;
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.seekTo = function(time) {
+      var error;
+      try {
+        return this.twitch.seek(time);
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.getTime = function(cb) {
+      var error;
+      try {
+        return cb(this.twitch.getCurrentTime());
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.setVolume = function(volume) {
+      var error;
+      try {
+        this.twitch.setVolume(volume);
+        if (volume > 0) {
+          return this.twitch.setMuted(false);
+        }
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.getVolume = function(cb) {
+      var error;
+      try {
+        if (this.twitch.isPaused()) {
+          return cb(0);
+        } else {
+          return cb(this.twitch.getVolume());
+        }
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.mapQuality = function(quality) {
+      switch (String(quality)) {
+        case '1080':
+          return 'chunked';
+        case '720':
+          return 'high';
+        case '480':
+          return 'medium';
+        case '360':
+          return 'low';
+        case '240':
+          return 'mobile';
+        case 'best':
+          return 'chunked';
+        default:
+          return '';
+      }
     };
 
     return TwitchPlayer;
 
-  })(EmbedPlayer);
+  })(Player);
 
   window.LivestreamPlayer = LivestreamPlayer = (function(superClass) {
     extend(LivestreamPlayer, superClass);
@@ -1057,8 +1236,6 @@
 
   })(VideoJSPlayer);
 
-  HITBOX_ERROR = 'Hitbox.tv only serves its content over plain HTTP, but you are viewing this page over secure HTTPS.  Your browser therefore blocks the hitbox embed due to mixed content policy.  In order to view hitbox, you must view this page over plain HTTP (change "https://" to "http://" in the address bar)-- your websocket will still be connected using secure HTTPS.  This is something I have asked Hitbox to fix but they have not done so yet.';
-
   window.HitboxPlayer = HitboxPlayer = (function(superClass) {
     extend(HitboxPlayer, superClass);
 
@@ -1071,19 +1248,15 @@
 
     HitboxPlayer.prototype.load = function(data) {
       data.meta.embed = {
-        src: "http://hitbox.tv/embed/" + data.id,
+        src: "https://www.hitbox.tv/embed/" + data.id,
         tag: 'iframe'
       };
       return HitboxPlayer.__super__.load.call(this, data);
     };
 
-    HitboxPlayer.prototype.mixedContentError = HITBOX_ERROR;
-
     return HitboxPlayer;
 
   })(EmbedPlayer);
-
-  USTREAM_ERROR = 'Ustream.tv\'s embed player only works over plain HTTP, but you are viewing this page over secure HTTPS.  Your browser therefore blocks the ustream embed due to mixed content policy.  In order to view ustream, you must view this page over plain HTTP (change "https://" to "http://" in the address bar)-- your websocket will still be connecting using secure HTTPS.  This is something that ustream needs to fix.';
 
   window.UstreamPlayer = UstreamPlayer = (function(superClass) {
     extend(UstreamPlayer, superClass);
@@ -1098,12 +1271,10 @@
     UstreamPlayer.prototype.load = function(data) {
       data.meta.embed = {
         tag: 'iframe',
-        src: "http://www.ustream.tv/embed/" + data.id + "?v=3&wmode=direct&autoplay=1"
+        src: "https://www.ustream.tv/embed/" + data.id + "?html5ui&autoplay=1"
       };
       return UstreamPlayer.__super__.load.call(this, data);
     };
-
-    UstreamPlayer.prototype.mixedContentError = USTREAM_ERROR;
 
     return UstreamPlayer;
 
@@ -1144,6 +1315,7 @@
 
     GoogleDriveYouTubePlayer.prototype.init = function(data) {
       var embed;
+      window.promptToInstallDriveUserscript();
       embed = $('<embed />').attr({
         type: 'application/x-shockwave-flash',
         src: "https://www.youtube.com/get_player?docid=" + data.id + "&ps=docs&partnerid=30&enablejsapi=1&cc_load_policy=1&auth_timeout=86400000000",
@@ -1273,6 +1445,32 @@
 
   })(Player);
 
+  window.promptToInstallDriveUserscript = function() {
+    var alertBox, closeButton, infoLink;
+    if (document.getElementById('prompt-install-drive-userscript')) {
+      return;
+    }
+    alertBox = document.createElement('div');
+    alertBox.id = 'prompt-install-drive-userscript';
+    alertBox.className = 'alert alert-info';
+    alertBox.innerHTML = "Due to continual breaking changes making it increasingly difficult to\nmaintain Google Drive support, you can now install a userscript that\nsimplifies the code and has better compatibility.  In the future, the\nold player will be removed.";
+    alertBox.appendChild(document.createElement('br'));
+    infoLink = document.createElement('a');
+    infoLink.className = 'btn btn-info';
+    infoLink.href = '/google_drive_userscript';
+    infoLink.textContent = 'Click here for details';
+    infoLink.target = '_blank';
+    alertBox.appendChild(infoLink);
+    closeButton = document.createElement('button');
+    closeButton.className = 'close pull-right';
+    closeButton.innerHTML = '&times;';
+    closeButton.onclick = function() {
+      return alertBox.parentNode.removeChild(alertBox);
+    };
+    alertBox.insertBefore(closeButton, alertBox.firstChild);
+    return document.getElementById('videowrap').appendChild(alertBox);
+  };
+
   window.HLSPlayer = HLSPlayer = (function(superClass) {
     extend(HLSPlayer, superClass);
 
@@ -1308,13 +1506,14 @@
     yt: YouTubePlayer,
     vi: VimeoPlayer,
     dm: DailymotionPlayer,
-    gd: GoogleDriveYouTubePlayer,
+    gd: GoogleDrivePlayer,
     gp: VideoJSPlayer,
     fi: FilePlayer,
     jw: FilePlayer,
     sc: SoundCloudPlayer,
     li: LivestreamPlayer,
     tw: TwitchPlayer,
+    tv: TwitchPlayer,
     cu: CustomEmbedPlayer,
     rt: RTMPPlayer,
     hb: HitboxPlayer,
@@ -1326,7 +1525,7 @@
   };
 
   window.loadMediaPlayer = function(data) {
-    var e, error, error1, error2, error3, error4;
+    var e, error;
     try {
       if (window.PLAYER) {
         window.PLAYER.destroy();
@@ -1338,26 +1537,15 @@
     if (data.meta.direct && data.type !== 'gd') {
       try {
         return window.PLAYER = new VideoJSPlayer(data);
-      } catch (error2) {
-        e = error2;
-        return console.error(e);
-      }
-    } else if (data.type === 'gd') {
-      try {
-        if (data.meta.html5hack) {
-          return window.PLAYER = new VideoJSPlayer(data);
-        } else {
-          return window.PLAYER = new GoogleDriveYouTubePlayer(data);
-        }
-      } catch (error3) {
-        e = error3;
+      } catch (error1) {
+        e = error1;
         return console.error(e);
       }
     } else if (data.type in TYPE_MAP) {
       try {
         return window.PLAYER = TYPE_MAP[data.type](data);
-      } catch (error4) {
-        e = error4;
+      } catch (error1) {
+        e = error1;
         return console.error(e);
       }
     }
