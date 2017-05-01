@@ -1,12 +1,13 @@
 var mysql = require("mysql");
 var bcrypt = require("bcrypt");
-var $util = require("./utilities");
-var Logger = require("./logger");
 var Config = require("./config");
 var tables = require("./database/tables");
 var net = require("net");
 var util = require("./utilities");
 import * as Metrics from 'cytube-common/lib/metrics/metrics';
+import { LoggerFactory } from '@calzoneman/jsli';
+
+const LOGGER = LoggerFactory.getLogger('database');
 
 var pool = null;
 var global_ipbans = {};
@@ -19,13 +20,14 @@ module.exports.init = function () {
         password: Config.get("mysql.password"),
         database: Config.get("mysql.database"),
         multipleStatements: true,
-        charset: "UTF8MB4_GENERAL_CI" // Needed for emoji and other non-BMP unicode
+        charset: "UTF8MB4_GENERAL_CI", // Needed for emoji and other non-BMP unicode
+        connectionLimit: Config.get("mysql.pool-size")
     });
 
     // Test the connection
     pool.getConnection(function (err, conn) {
         if (err) {
-            Logger.errlog.log("Initial database connection failed: " + err.stack);
+            LOGGER.error("Initial database connection failed: " + err.stack);
             process.exit(1);
         } else {
             tables.init(module.exports.query, function (err) {
@@ -40,9 +42,14 @@ module.exports.init = function () {
         }
     });
 
+    pool.on("enqueue", function () {
+        Metrics.incCounter("db:queryQueued", 1);
+    });
+
     global_ipbans = {};
     module.exports.users = require("./database/accounts");
     module.exports.channels = require("./database/channels");
+    module.exports.pool = pool;
 };
 
 /**
@@ -62,21 +69,21 @@ module.exports.query = function (query, sub, callback) {
 
     pool.getConnection(function (err, conn) {
         if (err) {
-            Logger.errlog.log("! DB connection failed: " + err);
+            LOGGER.error("! DB connection failed: " + err);
             callback("Database failure", null);
         } else {
             function cback(err, res) {
+                conn.release();
                 if (err) {
-                    Logger.errlog.log("! DB query failed: " + query);
+                    LOGGER.error("! DB query failed: " + query);
                     if (sub) {
-                        Logger.errlog.log("Substitutions: " + sub);
+                        LOGGER.error("Substitutions: " + sub);
                     }
-                    Logger.errlog.log(err);
+                    LOGGER.error(err);
                     callback("Database failure", null);
                 } else {
                     callback(null, res);
                 }
-                conn.release();
                 Metrics.stopTimer(timer);
             }
 
@@ -84,10 +91,16 @@ module.exports.query = function (query, sub, callback) {
                 console.log(query);
             }
 
-            if (sub) {
-                conn.query(query, sub, cback);
-            } else {
-                conn.query(query, cback);
+            try {
+                if (sub) {
+                    conn.query(query, sub, cback);
+                } else {
+                    conn.query(query, cback);
+                }
+            } catch (error) {
+                LOGGER.error("Broken query: " + error.stack);
+                callback("Broken query", null);
+                conn.release();
             }
         }
     });
@@ -196,7 +209,7 @@ module.exports.cleanOldPasswordResets = function (callback) {
         callback = blackHole;
     }
 
-    var query = "DELETE FROM aliases WHERE time < ?";
+    var query = "DELETE FROM password_reset WHERE expire < ?";
     module.exports.query(query, [Date.now() - 24*60*60*1000], callback);
 };
 
@@ -241,114 +254,6 @@ module.exports.lookupPasswordReset = function (hash, cb) {
 module.exports.deletePasswordReset = function (hash) {
     module.exports.query("DELETE FROM `password_reset` WHERE hash=?", [hash]);
 };
-
-/*
-module.exports.genPasswordReset = function (ip, name, email, callback) {
-    if(typeof callback !== "function")
-        callback = blackHole;
-
-    var query = "SELECT email FROM registrations WHERE uname=?";
-    module.exports.query(query, [name], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        if(res.length == 0) {
-            callback("Provided username does not exist", null);
-            return;
-        }
-
-        if(res[0].email != email) {
-            callback("Provided email does not match user's email", null);
-            return;
-        }
-
-        var hash = hashlib.sha256($util.randomSalt(32) + name);
-        var expire = Date.now() + 24*60*60*1000;
-        query = "INSERT INTO password_reset " +
-                "(ip, name, hash, email, expire) VALUES (?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE hash=?, expire=?";
-        module.exports.query(query, [ip, name, hash, email, expire, hash, expire],
-                   function (err, res) {
-            if(err) {
-                callback(err, null);
-                return;
-            }
-
-            callback(null, hash);
-        });
-    });
-};
-
-module.exports.recoverUserPassword = function (hash, callback) {
-    if(typeof callback !== "function")
-        callback = blackHole;
-
-    var query = "SELECT * FROM password_reset WHERE hash=?";
-    module.exports.query(query, [hash], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        if(res.length == 0) {
-            callback("Invalid password reset link", null);
-            return;
-        }
-
-        if(Date.now() > res[0].expire) {
-            module.exports.query("DELETE FROM password_reset WHERE hash=?", [hash]);
-            callback("Link expired.  Password resets are valid for 24hr",
-                     null);
-            return;
-        }
-
-        var name = res[0].name;
-
-        resetUserPassword(res[0].name, function (err, pw) {
-            if(err) {
-                callback(err, null);
-                return;
-            }
-
-            module.exports.query("DELETE FROM password_reset WHERE hash=?", [hash]);
-            callback(null, {
-                name: name,
-                pw: pw
-            });
-        });
-    });
-};
-
-module.exports.resetUserPassword = function (name, callback) {
-    if(typeof callback !== "function")
-        callback = blackHole;
-
-    var pwChars = "abcdefghijkmnopqrstuvwxyz023456789";
-    var pw = "";
-    for(var i = 0; i < 10; i++)
-        pw += pwChars[parseInt(Math.random() * 33)];
-
-    bcrypt.hash(pw, 10, function (err, data) {
-        if(err) {
-            Logger.errlog.log("bcrypt error: " + err);
-            callback("Password reset failure", null);
-            return;
-        }
-
-        var query = "UPDATE registrations SET pw=? WHERE uname=?";
-        module.exports.query(query, [data, name], function (err, res) {
-            if(err) {
-                callback(err, null);
-                return;
-            }
-
-            callback(null, pw);
-        });
-    });
-};
-*/
 
 /* user playlists */
 
@@ -576,7 +481,7 @@ module.exports.loadAnnouncement = function () {
         try {
             announcement = JSON.parse(announcement);
         } catch (e) {
-            Logger.errlog.log("Invalid announcement data in database: " +
+            LOGGER.error("Invalid announcement data in database: " +
                               announcement.value);
             module.exports.clearAnnouncement();
             return;

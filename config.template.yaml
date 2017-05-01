@@ -9,6 +9,7 @@ mysql:
   database: 'cytube3'
   user: 'cytube3'
   password: ''
+  pool-size: 10
 
 # Define IPs/ports to listen on
 # Each entry MUST define ip and port (ip can be '' to bind all available addresses)
@@ -249,3 +250,6 @@ service-socket:
 # Twitch Client ID for the data API (used for VOD lookups)
 # https://github.com/justintv/Twitch-API/blob/master/authentication.md#developer-setup
 twitch-client-id: null
+
+poll:
+  max-options: 50

@@ -14,6 +14,9 @@ var Server = require("../server");
 var session = require("../session");
 var csrf = require("./csrf");
 const url = require("url");
+import { LoggerFactory } from '@calzoneman/jsli';
+
+const LOGGER = LoggerFactory.getLogger('database/accounts');
 
 /**
  * Handles a GET request for /account/edit
@@ -325,7 +328,7 @@ function handleDeleteChannel(req, res) {
             return;
         }
 
-        if (channel.owner !== req.user.name && req.user.global_rank < 255) {
+        if ((!channel.owner || channel.owner.toLowerCase() !== req.user.name.toLowerCase()) && req.user.global_rank < 255) {
             db.channels.listUserChannels(req.user.name, function (err2, channels) {
                 sendPug(res, "account-channels", {
                     channels: err2 ? [] : channels,
@@ -581,7 +584,7 @@ function handlePasswordReset(req, res) {
 
             Config.get("mail.nodemailer").sendMail(mail, function (err, response) {
                 if (err) {
-                    Logger.errlog.log("mail fail: " + err);
+                    LOGGER.error("mail fail: " + err);
                     sendPug(res, "account-passwordreset", {
                         reset: false,
                         resetEmail: email,

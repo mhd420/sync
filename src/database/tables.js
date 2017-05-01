@@ -8,8 +8,10 @@ const TBL_USERS = "" +
         "`profile` TEXT CHARACTER SET utf8mb4 NOT NULL," +
         "`ip` VARCHAR(39) NOT NULL," +
         "`time` BIGINT NOT NULL," +
+        "`name_dedupe` VARCHAR(20) DEFAULT NULL," +
         "PRIMARY KEY(`id`)," +
-        "UNIQUE(`name`)) " +
+        "UNIQUE(`name`)," +
+        "UNIQUE(`name_dedupe`)) " +
     "CHARACTER SET utf8";
 
 const TBL_CHANNELS = "" +
@@ -18,7 +20,13 @@ const TBL_CHANNELS = "" +
         "`name` VARCHAR(30) NOT NULL," +
         "`owner` VARCHAR(20) NOT NULL," +
         "`time` BIGINT NOT NULL," +
-        "PRIMARY KEY (`id`), UNIQUE(`name`), INDEX(`owner`))" +
+        "`last_loaded` TIMESTAMP NOT NULL DEFAULT 0," +
+        "`owner_last_seen` TIMESTAMP NOT NULL DEFAULT 0," +
+        "PRIMARY KEY (`id`)," +
+        "UNIQUE(`name`)," +
+        "INDEX(`owner`)," +
+        "INDEX(`last_loaded`)," +
+        "INDEX(`owner_last_seen`)) " +
     "CHARACTER SET utf8";
 
 const TBL_GLOBAL_BANS = "" +

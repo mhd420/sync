@@ -25,33 +25,31 @@ function makeAlert(title, text, klass, textOnly) {
 function formatURL(data) {
     switch(data.type) {
         case "yt":
-            return "http://youtube.com/watch?v=" + data.id;
+            return "https://youtube.com/watch?v=" + data.id;
         case "vi":
-            return "http://vimeo.com/" + data.id;
+            return "https://vimeo.com/" + data.id;
         case "dm":
-            return "http://dailymotion.com/video/" + data.id;
+            return "https://dailymotion.com/video/" + data.id;
         case "vm":
             return "https://vid.me/" + data.id;
         case "sc":
             return data.id;
         case "li":
-            return "http://livestream.com/" + data.id;
+            return "https://livestream.com/" + data.id;
         case "tw":
-            return "http://twitch.tv/" + data.id;
+            return "https://twitch.tv/" + data.id;
         case "rt":
             return data.id;
-        case "jw":
-            return data.id;
         case "im":
-            return "http://imgur.com/a/" + data.id;
+            return "https://imgur.com/a/" + data.id;
         case "us":
-            return "http://ustream.tv/" + data.id;
+            return "https://ustream.tv/" + data.id;
         case "gd":
             return "https://docs.google.com/file/d/" + data.id;
         case "fi":
             return data.id;
         case "hb":
-            return "http://hitbox.tv/" + data.id;
+            return "https://hitbox.tv/" + data.id;
         case "hl":
             return data.id;
         case "sb":
@@ -789,6 +787,7 @@ function showPollMenu() {
     $("<strong/>").text("Title").appendTo(menu);
 
     var title = $("<input/>").addClass("form-control")
+        .attr("maxlength", "255")
         .attr("type", "text")
         .appendTo(menu);
 
@@ -820,6 +819,7 @@ function showPollMenu() {
     function addOption() {
         $("<input/>").addClass("form-control")
             .attr("type", "text")
+            .attr("maxlength", "255")
             .addClass("poll-menu-option")
             .insertBefore(addbtn);
     }
@@ -859,8 +859,16 @@ function showPollMenu() {
                 opts: opts,
                 obscured: hidden.prop("checked"),
                 timeout: t
+            }, function ack(result) {
+                if (result.error) {
+                    modalAlert({
+                        title: 'Error creating poll',
+                        textContent: result.error.message
+                    });
+                } else {
+                    menu.remove();
+                }
             });
-            menu.remove();
         });
 }
 
@@ -934,24 +942,10 @@ function handleModPermissions() {
     $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
     $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
     $("#cs-playlist_max_per_user").val(CHANNEL.opts.playlist_max_per_user || 0);
+    $("#cs-playlist_max_duration_per_user").val(formatTime(CHANNEL.opts.playlist_max_duration_per_user));
     $("#cs-new_user_chat_delay").val(formatTime(CHANNEL.opts.new_user_chat_delay || 0));
     $("#cs-new_user_chat_link_delay").val(formatTime(CHANNEL.opts.new_user_chat_link_delay || 0));
-    (function() {
-        if(typeof CHANNEL.opts.maxlength != "number") {
-            $("#cs-maxlength").val("");
-            return;
-        }
-        var h = parseInt(CHANNEL.opts.maxlength / 3600);
-        h = ""+h;
-        if(h.length < 2) h = "0" + h;
-        var m = parseInt((CHANNEL.opts.maxlength % 3600) / 60);
-        m = ""+m;
-        if(m.length < 2) m = "0" + m;
-        var s = parseInt(CHANNEL.opts.maxlength % 60);
-        s = ""+s;
-        if(s.length < 2) s = "0" + s;
-        $("#cs-maxlength").val(h + ":" + m + ":" + s);
-    })();
+    $("#cs-maxlength").val(formatTime(CHANNEL.opts.maxlength));
     $("#cs-csstext").val(CHANNEL.css);
     $("#cs-jstext").val(CHANNEL.js);
     $("#cs-motdtext").val(CHANNEL.motd);
@@ -1121,7 +1115,7 @@ function addLibraryButtons(li, id, source) {
             })
             .appendTo(btns);
     }
-    if(CLIENT.rank >= 2 && source === "library") {
+    if(hasPermission("deletefromchannellib") && source === "library") {
         $("<button/>").addClass("btn btn-xs btn-danger")
             .html("<span class='glyphicon glyphicon-trash'></span>")
             .click(function() {
@@ -1192,12 +1186,13 @@ AsyncQueue.prototype.reset = function () {
 var PL_ACTION_QUEUE = new AsyncQueue();
 
 // Because jQuery UI does weird things
+// 2017-03-26: Does it really though?  I have no idea if this is still needed.
 function playlistFind(uid) {
     var children = document.getElementById("queue").children;
     for(var i in children) {
-        if(typeof children[i].getAttribute != "function")
+        if(typeof children[i].className != "string")
             continue;
-        if(children[i].getAttribute("class").indexOf("pluid-" + uid) != -1)
+        if(children[i].className.split(" ").indexOf("pluid-" + uid) > 0)
             return children[i];
     }
     return false;
@@ -1260,13 +1255,6 @@ function parseMediaLink(url) {
     url = url.trim();
     url = url.replace("feature=player_embedded&", "");
 
-    if(url.indexOf("jw:") == 0) {
-        return {
-            id: url.substring(3),
-            type: "fi"
-        };
-    }
-
     if(url.indexOf("rtmp://") == 0) {
         return {
             id: url,
@@ -1299,6 +1287,18 @@ function parseMediaLink(url) {
     if((m = url.match(/twitch\.tv\/(?:.*?)\/([cv])\/(\d+)/))) {
         return {
             id: m[1] + m[2],
+            type: "tv"
+        };
+    }
+
+    /**
+     * 2017-02-23
+     * Twitch changed their URL pattern for recorded videos, apparently.
+     * https://github.com/calzoneman/sync/issues/646
+     */
+    if((m = url.match(/twitch\.tv\/videos\/(\d+)/))) {
+        return {
+            id: "v" + m[1],
             type: "tv"
         };
     }
@@ -1367,13 +1367,6 @@ function parseMediaLink(url) {
         };
     }
 
-    if ((m = url.match(/plus\.google\.com\/(?:u\/\d+\/)?photos\/(\d+)\/albums\/(\d+)\/(\d+)/))) {
-        return {
-            id: m[1] + "_" + m[2] + "_" + m[3],
-            type: "gp"
-        };
-    }
-
     if((m = url.match(/vid\.me\/([\w-]+)/))) {
         return {
             id: m[1],
@@ -1396,13 +1389,6 @@ function parseMediaLink(url) {
     }
 
     /*  Shorthand URIs  */
-    // To catch Google Plus by ID alone
-    if ((m = url.match(/^(?:gp:)?(\d{21}_\d{19}_\d{19})/))) {
-        return {
-            id: m[1],
-            type: "gp"
-        };
-    }
     // So we still trim DailyMotion URLs
     if((m = url.match(/^dm:([^\?&#_]+)/))) {
         return {
@@ -1986,12 +1972,14 @@ function genPermissionsEditor() {
     makeOption("Embed custom media", "playlistaddcustom", standard, CHANNEL.perms.playlistaddcustom + "");
     makeOption("Add raw video file", "playlistaddrawfile", standard, CHANNEL.perms.playlistaddrawfile + "");
     makeOption("Exceed maximum media length", "exceedmaxlength", standard, CHANNEL.perms.exceedmaxlength+"");
+    makeOption("Exceed maximum total media length", "exceedmaxdurationperuser", standard, CHANNEL.perms.exceedmaxdurationperuser+"");
     makeOption("Exceed maximum number of videos per user", "exceedmaxitems", standard, CHANNEL.perms.exceedmaxitems+"");
     makeOption("Add nontemporary media", "addnontemp", standard, CHANNEL.perms.addnontemp+"");
     makeOption("Temp/untemp playlist item", "settemp", standard, CHANNEL.perms.settemp+"");
     makeOption("Lock/unlock playlist", "playlistlock", modleader, CHANNEL.perms.playlistlock+"");
     makeOption("Shuffle playlist", "playlistshuffle", standard, CHANNEL.perms.playlistshuffle+"");
     makeOption("Clear playlist", "playlistclear", standard, CHANNEL.perms.playlistclear+"");
+    makeOption("Delete from channel library", "deletefromchannellib", standard, CHANNEL.perms.deletefromchannellib+"");
 
     addDivider("Polls");
     makeOption("Open/Close poll", "pollctl", modleader, CHANNEL.perms.pollctl+"");
@@ -2636,10 +2624,18 @@ function formatUserPlaylistList() {
 
 function loadEmotes(data) {
     CHANNEL.emotes = [];
+    CHANNEL.emoteMap = {};
+    CHANNEL.badEmotes = [];
     data.forEach(function (e) {
         if (e.image && e.name) {
             e.regex = new RegExp(e.source, "gi");
             CHANNEL.emotes.push(e);
+            if (/\s/g.test(e.name)) {
+                // Emotes with spaces can't be hashmapped
+                CHANNEL.badEmotes.push(e);
+            } else {
+                CHANNEL.emoteMap[e.name] = e;
+            }
         } else {
             console.error("Rejecting invalid emote: " + JSON.stringify(e));
         }
@@ -2651,11 +2647,31 @@ function execEmotes(msg) {
         return msg;
     }
 
+    if (CyTube.featureFlag && CyTube.featureFlag.efficientEmotes) {
+        return execEmotesEfficient(msg);
+    }
+
     CHANNEL.emotes.forEach(function (e) {
         msg = msg.replace(e.regex, '$1<img class="channel-emote" src="' +
                                    e.image + '" title="' + e.name + '">');
     });
 
+    return msg;
+}
+
+function execEmotesEfficient(msg) {
+    CHANNEL.badEmotes.forEach(function (e) {
+        msg = msg.replace(e.regex, '$1<img class="channel-emote" src="' +
+                          e.image + '" title="' + e.name + '">');
+    });
+    msg = msg.replace(/[^\s]+/g, function (m) {
+        if (CHANNEL.emoteMap.hasOwnProperty(m)) {
+            var e = CHANNEL.emoteMap[m];
+            return '<img class="channel-emote" src="' + e.image + '" title="' + e.name + '">';
+        } else {
+            return m;
+        }
+    });
     return msg;
 }
 
@@ -2933,43 +2949,6 @@ function vimeoSimulator2014(data) {
     }
 
     data.url = data.meta.direct[q].url;
-    return data;
-}
-
-function googlePlusSimulator2014(data) {
-    /* Google+ Simulator uses the raw file player */
-    data.type = "fi";
-
-    if (!data.meta.gpdirect) {
-        data.url = "";
-        return data;
-    }
-
-    /* Convert youtube-style quality key to vimeo workaround quality */
-    var q = USEROPTS.default_quality || "auto";
-    if (q === "highres") {
-        q = "hd1080";
-    }
-
-    var fallbacks = ["hd1080", "hd720", "large", "medium", "small"];
-    var i = fallbacks.indexOf(q);
-    if (i < 0) {
-        i = fallbacks.indexOf("medium");
-    }
-
-    while (!(q in data.meta.gpdirect) && i < fallbacks.length) {
-        q = fallbacks[i++];
-    }
-
-    if (i === fallbacks.length) {
-        var hasCodecs = Object.keys(data.meta.gpdirect);
-        if (hasCodecs.length > 0) {
-            q = hasCodecs[0];
-        }
-    }
-
-    data.url = data.meta.gpdirect[q].url;
-    data.contentType = data.meta.gpdirect[q].contentType;
     return data;
 }
 
@@ -3323,3 +3302,37 @@ function backoffRetry(fn, cb, options) {
 
     fn(callback);
 }
+
+CyTube.ui.changeVideoWidth = function uiChangeVideoWidth(direction) {
+    var body = document.body;
+    if (/hd/.test(body.className)) {
+        throw new Error("ui::changeVideoWidth does not work with the 'hd' layout");
+    }
+
+    var videoWrap = document.getElementById("videowrap");
+    var leftControls = document.getElementById("leftcontrols");
+    var leftPane = document.getElementById("leftpane");
+    var chatWrap = document.getElementById("chatwrap");
+    var rightControls = document.getElementById("rightcontrols");
+    var rightPane = document.getElementById("rightpane");
+
+    var match = videoWrap.className.match(/col-md-(\d+)/);
+    if (!match) {
+        throw new Error("ui::changeVideoWidth: videowrap is missing bootstrap class!");
+    }
+
+    var videoWidth = parseInt(match[1], 10) + direction;
+    if (videoWidth < 3 || videoWidth > 9) {
+        return;
+    }
+
+    var chatWidth = 12 - videoWidth;
+    videoWrap.className = "col-md-" + videoWidth + " col-lg-" + videoWidth;
+    rightControls.className = "col-md-" + videoWidth + " col-lg-" + videoWidth;
+    rightPane.className = "col-md-" + videoWidth + " col-lg-" + videoWidth;
+    chatWrap.className = "col-md-" + chatWidth + " col-lg-" + chatWidth;
+    leftControls.className = "col-md-" + chatWidth + " col-lg-" + chatWidth;
+    leftPane.className = "col-md-" + chatWidth + " col-lg-" + chatWidth;
+
+    handleVideoResize();
+};

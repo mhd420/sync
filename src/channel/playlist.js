@@ -6,9 +6,11 @@ var InfoGetter = require("../get-info");
 var Config = require("../config");
 var Flags = require("../flags");
 var db = require("../database");
-var Logger = require("../logger");
 var CustomEmbedFilter = require("../customembed").filter;
 var XSS = require("../xss");
+import { LoggerFactory } from '@calzoneman/jsli';
+
+const LOGGER = LoggerFactory.getLogger('playlist');
 
 const MAX_ITEMS = Config.get("playlist.max-items");
 // Limit requestPlaylist to once per 60 seconds
@@ -124,7 +126,7 @@ PlaylistModule.prototype.load = function (data) {
             } catch (e) {
                 return;
             }
-        } else if (item.media.type === "gd" || item.media.type === "gp") {
+        } else if (item.media.type === "gd") {
             delete item.media.meta.gpdirect;
         }
 
@@ -224,7 +226,7 @@ PlaylistModule.prototype.onUserPostJoin = function (user) {
         self.sendChangeMedia([user]);
     });
     user.socket.on("requestPlaylist", this.handleRequestPlaylist.bind(this, user));
-    user.on("login", function () {
+    user.waitFlag(Flags.U_HAS_CHANNEL_RANK, function () {
         self.sendPlaylist([user]);
     });
     user.socket.on("clearPlaylist", this.handleClear.bind(this, user));
@@ -392,11 +394,6 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
     var queueby = user.getName();
 
     var duration = undefined;
-    /**
-     * Duration can optionally be specified for a livestream.
-     * The UI for it only shows up for jw: queues, but it is
-     * accepted for any live media
-     */
     if (util.isLive(type) && typeof data.duration === "number") {
         duration = !isNaN(data.duration) ? data.duration : undefined;
     }
@@ -819,7 +816,7 @@ PlaylistModule.prototype.handleUpdate = function (user, data) {
     }
 
     var media = this.current.media;
-    if (util.isLive(media.type) && media.type !== "jw") {
+    if (util.isLive(media.type)) {
         return;
     }
 
@@ -919,6 +916,18 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
 
         if (!this.channel.modules.permissions.canExceedMaxItemsPerUser(user)) {
             return qfail("Channel limit exceeded: maximum number of videos per user");
+        }
+    }
+
+    if (this.channel.modules.options &&
+        this.channel.modules.options.get("playlist_max_duration_per_user") > 0) {
+
+        const limit = this.channel.modules.options.get("playlist_max_duration_per_user");
+        const totalDuration = usersItems.map(item => item.media.seconds).reduce((a, b) => a + b, 0) + media.seconds;
+        if (isNaN(totalDuration)) {
+            LOGGER.error("playlist_max_duration_per_user check calculated NaN: " + require('util').inspect(usersItems));
+        } else if (totalDuration >= limit && !this.channel.modules.permissions.canExceedMaxDurationPerUser(user)) {
+            return qfail("Channel limit exceeded: maximum total playlist time per user");
         }
     }
 
@@ -1344,9 +1353,9 @@ PlaylistModule.prototype.handleQueuePlaylist = function (user, data) {
                 self._addItem(m, qdata, user);
             });
         } catch (e) {
-            Logger.errlog.log("Loading user playlist failed!");
-            Logger.errlog.log("PL: " + user.getName() + "-" + data.name);
-            Logger.errlog.log(e.stack);
+            LOGGER.error("Loading user playlist failed!");
+            LOGGER.error("PL: " + user.getName() + "-" + data.name);
+            LOGGER.error(e.stack);
             user.socket.emit("queueFail", {
                 msg: "Internal error occurred when loading playlist.",
                 link: null

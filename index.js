@@ -6,6 +6,7 @@ if (/^v0/.test(process.version)) {
 }
 
 try {
+    require("./lib/logger");
     var Server = require("./lib/server");
 } catch (err) {
     console.error('FATAL: Failed to require() lib/server.js');
@@ -116,6 +117,8 @@ function handleLine(line) {
             });
             Logger.eventlog.log("[acp] " + "SYSTEM" + " forced unload of " + name);
         }
+    } else if (line.indexOf("/reloadcert") === 0) {
+        sv.reloadCertificateData();
     }
 }
 

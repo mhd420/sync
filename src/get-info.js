@@ -1,10 +1,8 @@
 var http = require("http");
 var https = require("https");
 var cheerio = require('cheerio');
-var Logger = require("./logger.js");
 var Media = require("./media");
 var CustomEmbedFilter = require("./customembed").filter;
-var Server = require("./server");
 var Config = require("./config");
 var ffmpeg = require("./ffmpeg");
 var mediaquery = require("cytube-mediaquery");
@@ -14,36 +12,14 @@ var Vidme = require("cytube-mediaquery/lib/provider/vidme");
 var Streamable = require("cytube-mediaquery/lib/provider/streamable");
 var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
 var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
+import { LoggerFactory } from '@calzoneman/jsli';
 
-/*
- * Preference map of quality => youtube formats.
- * see https://en.wikipedia.org/wiki/Youtube#Quality_and_codecs
- *
- * Prefer WebM over MP4, ignore other codecs (e.g. FLV)
- */
-const GOOGLE_PREFERENCE = {
-    "hd1080": [37, 46],
-    "hd720": [22, 45],
-    "large": [59, 44],
-    "medium": [18, 43, 34] // 34 is 360p FLV as a last-ditch
-};
-
-const CONTENT_TYPES = {
-    43: "webm",
-    44: "webm",
-    45: "webm",
-    46: "webm",
-    18: "mp4",
-    22: "mp4",
-    37: "mp4",
-    59: "mp4",
-    34: "flv"
-};
+const LOGGER = LoggerFactory.getLogger('get-info');
 
 var urlRetrieve = function (transport, options, callback) {
     var req = transport.request(options, function (res) {
         res.on("error", function (err) {
-            Logger.errlog.log("HTTP response " + options.host + options.path + " failed: "+
+            LOGGER.error("HTTP response " + options.host + options.path + " failed: "+
                 err);
             callback(503, "");
         });
@@ -59,7 +35,7 @@ var urlRetrieve = function (transport, options, callback) {
     });
 
     req.on("error", function (err) {
-        Logger.errlog.log("HTTP request " + options.host + options.path + " failed: " +
+        LOGGER.error("HTTP request " + options.host + options.path + " failed: " +
             err);
         callback(503, "");
     });
@@ -465,13 +441,6 @@ var Getters = {
         });
     },
 
-    /* JWPlayer */
-    jw: function (id, callback) {
-        var title = "JWPlayer - " + id;
-        var media = new Media(id, title, "--:--", "jw");
-        callback(false, media);
-    },
-
     /* rtmp stream */
     rt: function (id, callback) {
         var title = "Livestream";
@@ -512,7 +481,7 @@ var Getters = {
             if (/invalid embed/i.test(e.message)) {
                 return callback(e.message);
             } else {
-                Logger.errlog.log(e.stack);
+                LOGGER.error(e.stack);
                 return callback("Unknown error processing embed");
             }
         }
@@ -524,21 +493,6 @@ var Getters = {
         GoogleDrive.setHTML5HackEnabled(Config.get("google-drive.html5-hack-enabled"));
         var data = {
             type: "googledrive",
-            kind: "single",
-            id: id
-        };
-
-        mediaquery.lookup(data).then(function (video) {
-            callback(null, convertMedia(video));
-        }).catch(function (err) {
-            callback(err.message || err);
-        });
-    },
-
-    /* Google+ videos */
-    gp: function (id, callback) {
-        var data = {
-            type: "google+",
             kind: "single",
             id: id
         };

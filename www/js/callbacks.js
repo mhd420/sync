@@ -893,7 +893,7 @@ Callbacks = {
 
             generator: function (item, page, index) {
                 var li = makeSearchEntry(item, false);
-                if(hasPermission("playlistadd")) {
+                if(hasPermission("playlistadd") || hasPermission("deletefromchannellib")) {
                     addLibraryButtons(li, item.id, data.source);
                 }
                 $(li).appendTo($("#library"));
@@ -997,9 +997,22 @@ Callbacks = {
                 break;
             }
         }
+        for (var i = 0; i < CHANNEL.badEmotes.length; i++) {
+            if (CHANNEL.badEmotes[i].name === data.name) {
+                CHANNEL.badEmotes[i] = data;
+                break;
+            }
+        }
 
         if (!found) {
             CHANNEL.emotes.push(data);
+            if (/\s/g.test(data.name)) {
+                CHANNEL.badEmotes.push(data);
+            } else {
+                CHANNEL.emoteMap[data.name] = data;
+            }
+        } else {
+            CHANNEL.emoteMap[data.name] = data;
         }
 
         EMOTELIST.handleChange();
@@ -1019,6 +1032,13 @@ Callbacks = {
             var row = $("code:contains('" + data.name + "')").parent().parent();
             row.hide("fade", row.remove.bind(row));
             CHANNEL.emotes.splice(i, 1);
+            delete CHANNEL.emoteMap[data.name];
+            for (var i = 0; i < CHANNEL.badEmotes.length; i++) {
+                if (CHANNEL.badEmotes[i].name === data.name) {
+                    CHANNEL.badEmotes.splice(i, 1);
+                    break;
+                }
+            }
         }
     },
 
@@ -1081,6 +1101,12 @@ Callbacks = {
 
         if (formGroup.length > 0) {
             formGroup.removeClass("has-error");
+        }
+    },
+
+    clearVoteskipVote: function () {
+        if (CHANNEL.opts.allow_voteskip && hasPermission("voteskip")) {
+            $("#voteskip").attr("disabled", false);
         }
     }
 }

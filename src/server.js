@@ -4,10 +4,13 @@ var Config = require("./config");
 var Promise = require("bluebird");
 import * as ChannelStore from './channel-storage/channelstore';
 import { EventEmitter } from 'events';
+import { LoggerFactory } from '@calzoneman/jsli';
+
+const LOGGER = LoggerFactory.getLogger('server');
 
 module.exports = {
     init: function () {
-        Logger.syslog.log("Starting CyTube v" + VERSION);
+        LOGGER.info("Starting CyTube v%s", VERSION);
         var chanlogpath = path.join(__dirname, "../chanlogs");
         fs.exists(chanlogpath, function (exists) {
             exists || fs.mkdirSync(chanlogpath);
@@ -36,10 +39,7 @@ var fs = require("fs");
 var http = require("http");
 var https = require("https");
 var express = require("express");
-var Logger = require("./logger");
 var Channel = require("./channel/channel");
-var User = require("./user");
-var $util = require("./utilities");
 var db = require("./database");
 var Flags = require("./flags");
 var sio = require("socket.io");
@@ -107,14 +107,10 @@ var Server = function () {
     // http/https/sio server init -----------------------------------------
     var key = "", cert = "", ca = undefined;
     if (Config.get("https.enabled")) {
-        key = fs.readFileSync(path.resolve(__dirname, "..",
-                                               Config.get("https.keyfile")));
-        cert = fs.readFileSync(path.resolve(__dirname, "..",
-                                                Config.get("https.certfile")));
-        if (Config.get("https.cafile")) {
-            ca = fs.readFileSync(path.resolve(__dirname, "..",
-                                              Config.get("https.cafile")));
-        }
+        const certData = self.loadCertificateData();
+        key = certData.key;
+        cert = certData.cert;
+        ca = certData.ca;
     }
 
     var opts = {
@@ -129,7 +125,7 @@ var Server = function () {
     Config.get("listen").forEach(function (bind) {
         var id = bind.ip + ":" + bind.port;
         if (id in self.servers) {
-            Logger.syslog.log("[WARN] Ignoring duplicate listen address " + id);
+            LOGGER.warn("Ignoring duplicate listen address %s", id);
             return;
         }
 
@@ -165,6 +161,40 @@ var Server = function () {
 };
 
 Server.prototype = Object.create(EventEmitter.prototype);
+
+Server.prototype.loadCertificateData = function loadCertificateData() {
+    const data = {
+        key: fs.readFileSync(path.resolve(__dirname, "..",
+                                          Config.get("https.keyfile"))),
+        cert: fs.readFileSync(path.resolve(__dirname, "..",
+                                           Config.get("https.certfile")))
+    };
+
+    if (Config.get("https.cafile")) {
+        data.ca = fs.readFileSync(path.resolve(__dirname, "..",
+                                               Config.get("https.cafile")));
+    }
+
+    return data;
+};
+
+Server.prototype.reloadCertificateData = function reloadCertificateData() {
+    const certData = this.loadCertificateData();
+    Object.keys(this.servers).forEach(key => {
+        const server = this.servers[key];
+        // TODO: Replace with actual node API
+        // once https://github.com/nodejs/node/issues/4464 is implemented.
+        if (server._sharedCreds) {
+            try {
+                server._sharedCreds.context.setCert(certData.cert);
+                server._sharedCreds.context.setKey(certData.key, Config.get("https.passphrase"));
+                LOGGER.info('Reloaded certificate data for %s', key);
+            } catch (error) {
+                LOGGER.error('Failed to reload certificate data for %s: %s', key, error.stack);
+            }
+        }
+    });
+};
 
 Server.prototype.getHTTPIP = function (req) {
     var ip = req.ip;
@@ -216,6 +246,9 @@ Server.prototype.getChannel = function (name) {
     c.on("empty", function () {
         self.unloadChannel(c);
     });
+    c.waitFlag(Flags.C_ERROR, () => {
+        self.unloadChannel(c, { skipSave: true });
+    });
     self.channels.push(c);
     return c;
 };
@@ -231,7 +264,7 @@ Server.prototype.unloadChannel = function (chan, options) {
 
     if (!options.skipSave) {
         chan.saveState().catch(error => {
-            Logger.errlog.log(`Failed to save /r/${chan.name} for unload: ${error.stack}`);
+            LOGGER.error(`Failed to save /r/${chan.name} for unload: ${error.stack}`);
         });
     }
 
@@ -249,13 +282,13 @@ Server.prototype.unloadChannel = function (chan, options) {
          */
         Object.keys(chan.modules[k]).forEach(function (prop) {
             if (chan.modules[k][prop] && chan.modules[k][prop]._onTimeout) {
-                Logger.errlog.log("Warning: detected non-null timer when unloading " +
+                LOGGER.warn("Detected non-null timer when unloading " +
                         "module " + k + ": " + prop);
                 try {
                     clearTimeout(chan.modules[k][prop]);
                     clearInterval(chan.modules[k][prop]);
                 } catch (error) {
-                    Logger.errlog.log(error.stack);
+                    LOGGER.error(error.stack);
                 }
             }
         });
@@ -268,7 +301,7 @@ Server.prototype.unloadChannel = function (chan, options) {
         }
     }
 
-    Logger.syslog.log("Unloaded channel " + chan.name);
+    LOGGER.info("Unloaded channel " + chan.name);
     chan.broadcastUsercount.cancel();
     // Empty all outward references from the channel
     var keys = Object.keys(chan);
@@ -317,22 +350,22 @@ Server.prototype.setAnnouncement = function (data) {
 };
 
 Server.prototype.shutdown = function () {
-    Logger.syslog.log("Unloading channels");
+    LOGGER.info("Unloading channels");
     Promise.map(this.channels, channel => {
         try {
             return channel.saveState().tap(() => {
-                Logger.syslog.log(`Saved /r/${channel.name}`);
+                LOGGER.info(`Saved /r/${channel.name}`);
             }).catch(err => {
-                Logger.errlog.log(`Failed to save /r/${channel.name}: ${err.stack}`);
+                LOGGER.error(`Failed to save /r/${channel.name}: ${err.stack}`);
             });
         } catch (error) {
-            Logger.errlog.log(`Failed to save channel: ${error.stack}`);
+            LOGGER.error(`Failed to save channel: ${error.stack}`);
         }
     }, { concurrency: 5 }).then(() => {
-        Logger.syslog.log("Goodbye");
+        LOGGER.info("Goodbye");
         process.exit(0);
     }).catch(err => {
-        Logger.errlog.log(`Caught error while saving channels: ${err.stack}`);
+        LOGGER.error(`Caught error while saving channels: ${err.stack}`);
         process.exit(1);
     });
 };
@@ -345,7 +378,7 @@ Server.prototype.handlePartitionMapChange = function () {
         }
 
         if (!this.partitionDecider.isChannelOnThisPartition(channel.uniqueName)) {
-            Logger.syslog.log("Partition changed for " + channel.uniqueName);
+            LOGGER.info("Partition changed for " + channel.uniqueName);
             return channel.saveState().then(() => {
                 channel.broadcastAll("partitionChange",
                         this.partitionDecider.getPartitionForChannel(channel.uniqueName));
@@ -358,12 +391,12 @@ Server.prototype.handlePartitionMapChange = function () {
                 });
                 this.unloadChannel(channel, { skipSave: true });
             }).catch(error => {
-                Logger.errlog.log(`Failed to unload /r/${channel.name} for ` +
+                LOGGER.error(`Failed to unload /r/${channel.name} for ` +
                                   `partition map flip: ${error.stack}`);
             });
         }
     }, { concurrency: 5 }).then(() => {
-        Logger.syslog.log("Partition reload complete");
+        LOGGER.info("Partition reload complete");
     });
 };
 
