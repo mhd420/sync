@@ -28,77 +28,60 @@ function handleAnnounceClear(user) {
 }
 
 function handleGlobalBan(user, data) {
-    db.globalBanIP(data.ip, data.note, function (err, res) {
-        if (err) {
-            user.socket.emit("errMessage", {
-                msg: err
-            });
-            return;
-        }
-
+    const globalBanDB = db.getGlobalBanDB();
+    globalBanDB.addGlobalIPBan(data.ip, data.note).then(() => {
         Logger.eventlog.log("[acp] " + eventUsername(user) + " global banned " + data.ip);
-
-        db.listGlobalBans(function (err, bans) {
-            if (err) {
-                user.socket.emit("errMessage", {
-                    msg: err
-                });
-                return;
-            }
-
-            var flat = [];
-            for (var ip in bans) {
-                flat.push({
-                    ip: ip,
-                    note: bans[ip].reason
-                });
-            }
-            user.socket.emit("acp-gbanlist", flat);
+        return globalBanDB.listGlobalBans().then(bans => {
+            // Why is it called reason in the DB and note in the socket frame?
+            // Who knows...
+            const mappedBans = bans.map(ban => {
+                return { ip: ban.ip, note: ban.reason };
+            });
+            user.socket.emit("acp-gbanlist", mappedBans);
+        });
+    }).catch(error => {
+        user.socket.emit("errMessage", {
+            msg: error.message
         });
     });
 }
 
 function handleGlobalBanDelete(user, data) {
-    db.globalUnbanIP(data.ip, function (err, res) {
-        if (err) {
-            user.socket.emit("errMessage", {
-                msg: err
-            });
-            return;
-        }
-
+    const globalBanDB = db.getGlobalBanDB();
+    globalBanDB.removeGlobalIPBan(data.ip).then(() => {
         Logger.eventlog.log("[acp] " + eventUsername(user) + " un-global banned " +
                             data.ip);
-
-        db.listGlobalBans(function (err, bans) {
-            if (err) {
-                user.socket.emit("errMessage", {
-                    msg: err
-                });
-                return;
-            }
-
-            var flat = [];
-            for (var ip in bans) {
-                flat.push({
-                    ip: ip,
-                    note: bans[ip].reason
-                });
-            }
-            user.socket.emit("acp-gbanlist", flat);
+        return globalBanDB.listGlobalBans().then(bans => {
+            // Why is it called reason in the DB and note in the socket frame?
+            // Who knows...
+            const mappedBans = bans.map(ban => {
+                return { ip: ban.ip, note: ban.reason };
+            });
+            user.socket.emit("acp-gbanlist", mappedBans);
+        });
+    }).catch(error => {
+        user.socket.emit("errMessage", {
+            msg: error.message
         });
     });
 }
 
 function handleListUsers(user, data) {
-    var name = data.name;
-    if (typeof name !== "string") {
-        name = "";
-    }
+    var value = data.value;
+    var field = data.field;
+    value = (typeof value !== 'string') ? '' : value;
+    field = (typeof field !== 'string') ? 'name' : field;
 
     var fields = ["id", "name", "global_rank", "email", "ip", "time"];
 
-    db.users.search(name, fields, function (err, users) {
+    if(!fields.includes(field)){
+        user.socket.emit("errMessage", {
+            msg: `The field "${field}" doesn't exist or isn't searchable.`
+        });
+        return;
+    }
+
+    db.users.search(field, value, fields, function (err, users) {
         if (err) {
             user.socket.emit("errMessage", {
                 msg: err
@@ -295,22 +278,18 @@ function init(user) {
     s.on("acp-force-unload", handleForceUnload.bind(this, user));
     s.on("acp-list-stats", handleListStats.bind(this, user));
 
-    db.listGlobalBans(function (err, bans) {
-        if (err) {
-            user.socket.emit("errMessage", {
-                msg: err
-            });
-            return;
-        }
-
-        var flat = [];
-        for (var ip in bans) {
-            flat.push({
-                ip: ip,
-                note: bans[ip].reason
-            });
-        }
-        user.socket.emit("acp-gbanlist", flat);
+    const globalBanDB = db.getGlobalBanDB();
+    globalBanDB.listGlobalBans().then(bans => {
+        // Why is it called reason in the DB and note in the socket frame?
+        // Who knows...
+        const mappedBans = bans.map(ban => {
+            return { ip: ban.ip, note: ban.reason };
+        });
+        user.socket.emit("acp-gbanlist", mappedBans);
+    }).catch(error => {
+        user.socket.emit("errMessage", {
+            msg: error.message
+        });
     });
     Logger.eventlog.log("[acp] Initialized ACP for " + eventUsername(user));
 }

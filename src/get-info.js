@@ -12,6 +12,7 @@ var Vidme = require("cytube-mediaquery/lib/provider/vidme");
 var Streamable = require("cytube-mediaquery/lib/provider/streamable");
 var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
 var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
+var TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
 import { LoggerFactory } from '@calzoneman/jsli';
 
 const LOGGER = LoggerFactory.getLogger('get-info');
@@ -391,6 +392,25 @@ var Getters = {
         });
     },
 
+    /* twitch clip */
+    tc: function (id, callback) {
+        var m = id.match(/^([A-Za-z]+)$/);
+        if (m) {
+            id = m[1];
+        } else {
+            process.nextTick(callback, "Invalid Twitch VOD ID");
+            return;
+        }
+
+        TwitchClip.lookup(id).then(video => {
+            const media = new Media(video.id, video.title, video.duration,
+                                    "tc", video.meta);
+            process.nextTick(callback, false, media);
+        }).catch(function (err) {
+            callback(err.message || err, null);
+        });
+    },
+
     /* ustream.tv */
     us: function (id, callback) {
         /**
@@ -519,7 +539,7 @@ var Getters = {
         });
     },
 
-    /* hitbox.tv */
+    /* hitbox.tv / smashcast.tv */
     hb: function (id, callback) {
         var m = id.match(/([\w-]+)/);
         if (m) {
@@ -528,7 +548,7 @@ var Getters = {
             callback("Invalid ID", null);
             return;
         }
-        var title = "Hitbox.tv - " + id;
+        var title = "Smashcast - " + id;
         var media = new Media(id, title, "--:--", "hb");
         callback(false, media);
     },

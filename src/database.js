@@ -6,51 +6,88 @@ var net = require("net");
 var util = require("./utilities");
 import * as Metrics from 'cytube-common/lib/metrics/metrics';
 import { LoggerFactory } from '@calzoneman/jsli';
+import knex from 'knex';
+import { GlobalBanDB } from './db/globalban';
 
 const LOGGER = LoggerFactory.getLogger('database');
 
-var pool = null;
-var global_ipbans = {};
+let db = null;
+let globalBanDB = null;
 
-module.exports.init = function () {
-    pool = mysql.createPool({
-        host: Config.get("mysql.server"),
-        port: Config.get("mysql.port"),
-        user: Config.get("mysql.user"),
-        password: Config.get("mysql.password"),
-        database: Config.get("mysql.database"),
-        multipleStatements: true,
-        charset: "UTF8MB4_GENERAL_CI", // Needed for emoji and other non-BMP unicode
-        connectionLimit: Config.get("mysql.pool-size")
-    });
-
-    // Test the connection
-    pool.getConnection(function (err, conn) {
-        if (err) {
-            LOGGER.error("Initial database connection failed: " + err.stack);
-            process.exit(1);
-        } else {
-            tables.init(module.exports.query, function (err) {
-                if (err) {
-                    return;
-                }
-                require("./database/update").checkVersion();
-                module.exports.loadAnnouncement();
-            });
-            // Refresh global IP bans
-            module.exports.listGlobalBans();
+class Database {
+    constructor(knexConfig = null) {
+        if (knexConfig === null) {
+            knexConfig = {
+                client: 'mysql',
+                connection: {
+                    host: Config.get('mysql.server'),
+                    port: Config.get('mysql.port'),
+                    user: Config.get('mysql.user'),
+                    password: Config.get('mysql.password'),
+                    database: Config.get('mysql.database'),
+                    multipleStatements: true, // Legacy thing
+                    charset: 'UTF8MB4_GENERAL_CI'
+                },
+                pool: {
+                    min: Config.get('mysql.pool-size'),
+                    max: Config.get('mysql.pool-size')
+                },
+                debug: !!process.env.KNEX_DEBUG
+            };
         }
-    });
 
-    pool.on("enqueue", function () {
-        Metrics.incCounter("db:queryQueued", 1);
-    });
+        this.knex = knex(knexConfig);
+    }
 
-    global_ipbans = {};
+    runTransaction(fn) {
+        const timer = Metrics.startTimer('db:queryTime');
+        return this.knex.transaction(fn).finally(() => {
+            Metrics.stopTimer(timer);
+        });
+    }
+}
+
+module.exports.Database = Database;
+
+module.exports.init = function (newDB) {
+    if (newDB) {
+        db = newDB;
+    } else {
+        db = new Database();
+    }
+    db.knex.raw('select 1 from dual')
+            .catch(error => {
+                LOGGER.error('Initial database connection failed: %s', error.stack);
+                process.exit(1);
+            }).then(() => {
+                process.nextTick(legacySetup);
+            });
+
     module.exports.users = require("./database/accounts");
     module.exports.channels = require("./database/channels");
-    module.exports.pool = pool;
 };
+
+module.exports.getDB = function getDB() {
+    return db;
+};
+
+module.exports.getGlobalBanDB = function getGlobalBanDB() {
+    if (globalBanDB === null) {
+        globalBanDB = new GlobalBanDB(db);
+    }
+
+    return globalBanDB;
+};
+
+function legacySetup() {
+    tables.init(module.exports.query, function (err) {
+        if (err) {
+            return;
+        }
+        require("./database/update").checkVersion();
+        module.exports.loadAnnouncement();
+    });
+}
 
 /**
  * Execute a database query
@@ -60,50 +97,26 @@ module.exports.query = function (query, sub, callback) {
     // 2nd argument is optional
     if (typeof sub === "function") {
         callback = sub;
-        sub = false;
+        sub = undefined;
     }
 
     if (typeof callback !== "function") {
         callback = blackHole;
     }
 
-    pool.getConnection(function (err, conn) {
-        if (err) {
-            LOGGER.error("! DB connection failed: " + err);
-            callback("Database failure", null);
-        } else {
-            function cback(err, res) {
-                conn.release();
-                if (err) {
-                    LOGGER.error("! DB query failed: " + query);
-                    if (sub) {
-                        LOGGER.error("Substitutions: " + sub);
-                    }
-                    LOGGER.error(err);
-                    callback("Database failure", null);
-                } else {
-                    callback(null, res);
-                }
-                Metrics.stopTimer(timer);
-            }
+    if (process.env.SHOW_SQL) {
+        console.log(query);
+    }
 
-            if (process.env.SHOW_SQL) {
-                console.log(query);
-            }
-
-            try {
-                if (sub) {
-                    conn.query(query, sub, cback);
-                } else {
-                    conn.query(query, cback);
-                }
-            } catch (error) {
-                LOGGER.error("Broken query: " + error.stack);
-                callback("Broken query", null);
-                conn.release();
-            }
-        }
-    });
+    db.knex.raw(query, sub)
+        .then(res => {
+            process.nextTick(callback, null, res[0]);
+        }).catch(error => {
+            LOGGER.error('Legacy DB query failed.  Query: %s, Substitutions: %j, Error: %s', query, sub, error);
+            process.nextTick(callback, 'Database failure', null);
+        }).finally(() => {
+            Metrics.stopTimer(timer);
+        });
 };
 
 /**
@@ -112,92 +125,6 @@ module.exports.query = function (query, sub, callback) {
 function blackHole() {
 
 }
-
-/* REGION global bans */
-
-/**
- * Check if an IP address is globally banned
- */
-module.exports.isGlobalIPBanned = function (ip, callback) {
-    var range = util.getIPRange(ip);
-    var wrange = util.getWideIPRange(ip);
-    var banned = ip in global_ipbans ||
-    range in global_ipbans ||
-    wrange in global_ipbans;
-
-    if (callback) {
-        callback(null, banned);
-    }
-    return banned;
-};
-
-/**
- * Retrieve all global bans from the database.
- * Cache locally in global_bans
- */
-module.exports.listGlobalBans = function (callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    module.exports.query("SELECT * FROM global_bans WHERE 1", function (err, res) {
-        if (err) {
-            callback(err, null);
-            return;
-        }
-
-        global_ipbans = {};
-        for (var i = 0; i < res.length; i++) {
-            global_ipbans[res[i].ip] = res[i];
-        }
-
-        callback(null, global_ipbans);
-    });
-};
-
-/**
- * Globally ban by IP
- */
-module.exports.globalBanIP = function (ip, reason, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    var query = "INSERT INTO global_bans (ip, reason) VALUES (?, ?)" +
-                " ON DUPLICATE KEY UPDATE reason=?";
-    module.exports.query(query, [ip, reason, reason], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        module.exports.listGlobalBans();
-        callback(null, res);
-    });
-};
-
-/**
- * Remove a global IP ban
- */
-module.exports.globalUnbanIP = function (ip, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-
-    var query = "DELETE FROM global_bans WHERE ip=?";
-    module.exports.query(query, [ip], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        module.exports.listGlobalBans();
-        callback(null, res);
-    });
-};
-
-/* END REGION */
 
 /* password recovery */
 

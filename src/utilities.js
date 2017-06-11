@@ -233,17 +233,19 @@
             case "im":
                 return "https://imgur.com/a/" + id;
             case "us":
-                return "https://ustream.tv/" + id;
+                return "https://ustream.tv/channel/" + id;
             case "gd":
                 return "https://docs.google.com/file/d/" + id;
             case "fi":
                 return id;
             case "hb":
-                return "https://hitbox.tv/" + id;
+                return "https://www.smashcast.tv/" + id;
             case "hl":
                 return id;
             case "sb":
                 return "https://streamable.com/" + id;
+            case "tc":
+                return "https://clips.twitch.tv/" + id;
             default:
                 return "";
         }
