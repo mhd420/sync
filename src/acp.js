@@ -4,6 +4,7 @@ var db = require("./database");
 var util = require("./utilities");
 var Config = require("./config");
 var Server = require("./server");
+import { v4 as uuidv4 } from 'uuid';
 
 function eventUsername(user) {
     return user.getName() + "@" + user.realip;
@@ -13,6 +14,7 @@ function handleAnnounce(user, data) {
     var sv = Server.getServer();
 
     sv.announce({
+        id: uuidv4(),
         title: data.title,
         text: data.content,
         from: user.getName()
@@ -137,7 +139,7 @@ function handleSetRank(user, data) {
     });
 }
 
-function handleResetPassword(user, data) {
+function handleResetPassword(user, data, ack) {
     var name = data.name;
     var email = data.email;
     if (typeof name !== "string" || typeof email !== "string") {
@@ -162,19 +164,14 @@ function handleResetPassword(user, data) {
             expire: expire
         }, function (err) {
             if (err) {
-                user.socket.emit("errMessage", {
-                    msg: err
-                });
+                ack && ack({ error: err });
                 return;
             }
 
             Logger.eventlog.log("[acp] " + eventUsername(user) + " initialized a " +
                                 "password recovery for " + name);
 
-            user.socket.emit("errMessage", {
-                msg: "Reset link: " + Config.get("http.domain") +
-                     "/account/passwordrecover/" + hash
-            });
+            ack && ack({ hash });
         });
     });
 }
@@ -257,12 +254,6 @@ function handleForceUnload(user, data) {
     Logger.eventlog.log("[acp] " + eventUsername(user) + " forced unload of " + name);
 }
 
-function handleListStats(user) {
-    db.listStats(function (err, rows) {
-        user.socket.emit("acp-list-stats", rows);
-    });
-}
-
 function init(user) {
     var s = user.socket;
     s.on("acp-announce", handleAnnounce.bind(this, user));
@@ -276,7 +267,6 @@ function init(user) {
     s.on("acp-delete-channel", handleDeleteChannel.bind(this, user));
     s.on("acp-list-activechannels", handleListActiveChannels.bind(this, user));
     s.on("acp-force-unload", handleForceUnload.bind(this, user));
-    s.on("acp-list-stats", handleListStats.bind(this, user));
 
     const globalBanDB = db.getGlobalBanDB();
     globalBanDB.listGlobalBans().then(bans => {

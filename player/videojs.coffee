@@ -3,13 +3,13 @@ sortSources = (sources) ->
         console.error('sortSources() called with null source list')
         return []
 
-    qualities = ['1080', '720', '480', '360', '240']
+    qualities = ['2160', '1440', '1080', '720', '540', '480', '360', '240']
     pref = String(USEROPTS.default_quality)
     if USEROPTS.default_quality == 'best'
-        pref = '1080'
+        pref = '2160'
     idx = qualities.indexOf(pref)
     if idx < 0
-        idx = 2
+        idx = 5 # 480p
 
     qualityOrder = qualities.slice(idx).concat(qualities.slice(0, idx).reverse())
     sourceOrder = []
@@ -64,10 +64,14 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                 $('<source/>').attr(
                     src: source.src
                     type: source.type
-                    'data-quality': source.quality
+                    res: source.quality
+                    label: "#{source.quality}p #{source.type.split('/')[1]}"
                 ).appendTo(video)
             )
 
+            # TODO: Refactor VideoJSPlayer to use a preLoad()/load()/postLoad() pattern
+            # VideoJSPlayer should provide the core functionality and logic for specific
+            # dependent player types (gdrive) should be an extension
             if data.meta.gdrive_subtitles
                 data.meta.gdrive_subtitles.available.forEach((subt) ->
                     label = subt.lang_original
@@ -82,7 +86,24 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                     ).appendTo(video)
                 )
 
-            @player = videojs(video[0], autoplay: true, controls: true)
+            if data.meta.textTracks
+                data.meta.textTracks.forEach((track) ->
+                    label = track.name
+                    $('<track/>').attr(
+                        src: track.url
+                        kind: 'subtitles'
+                        type: track.type
+                        label: label
+                    ).appendTo(video)
+                )
+
+            @player = videojs(video[0],
+                    autoplay: true,
+                    controls: true,
+                    plugins:
+                        videoJsResolutionSwitcher:
+                            default: @sources[0].quality
+            )
             @player.ready(=>
                 @player.on('error', =>
                     err = @player.error()

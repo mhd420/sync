@@ -4,11 +4,11 @@ var nodemailer = require("nodemailer");
 var net = require("net");
 var YAML = require("yamljs");
 
-import { LoggerFactory } from '@calzoneman/jsli';
-import { loadFromToml } from 'cytube-common/lib/configuration/configloader';
+import { loadFromToml } from './configuration/configloader';
 import { CamoConfig } from './configuration/camoconfig';
+import { PrometheusConfig } from './configuration/prometheusconfig';
 
-const LOGGER = LoggerFactory.getLogger('config');
+const LOGGER = require('@calzoneman/jsli')('config');
 
 var defaults = {
     mysql: {
@@ -43,7 +43,10 @@ var defaults = {
         "cookie-secret": "change-me",
         index: {
             "max-entries": 50
-        }
+        },
+        "trust-proxies": [
+            "loopback"
+        ]
     },
     https: {
         enabled: false,
@@ -70,24 +73,20 @@ var defaults = {
         "from-name": "CyTube Services"
     },
     "youtube-v3-key": "",
+    "channel-blacklist": [],
+    "channel-path": "r",
     "channel-save-interval": 5,
+    "channel-storage": {
+        type: "file"
+    },
     "max-channels-per-user": 5,
     "max-accounts-per-ip": 5,
     "guest-login-delay": 60,
-    stats: {
-        interval: 3600000,
-        "max-age": 86400000
-    },
     aliases: {
         "purge-interval": 3600000,
         "max-age": 2592000000
     },
     "vimeo-workaround": false,
-    "vimeo-oauth": {
-        enabled: false,
-        "consumer-key": "",
-        secret: ""
-    },
     "html-template": {
         title: "CyTube Beta", description: "Free, open source synchtube"
     },
@@ -102,7 +101,6 @@ var defaults = {
         "max-items": 4000,
         "update-interval": 5
     },
-    "channel-blacklist": [],
     ffmpeg: {
         enabled: false,
         "ffprobe-exec": "ffprobe"
@@ -114,15 +112,9 @@ var defaults = {
         "user": "nobody",
         "timeout": 15
     },
-    "channel-storage": {
-        type: "file"
-    },
     "service-socket": {
         enabled: false,
         socket: "service.sock"
-    },
-    "google-drive": {
-        "html5-hack-enabled": false
     },
     "twitch-client-id": null,
     poll: {
@@ -149,6 +141,7 @@ function merge(obj, def, path) {
 
 var cfg = defaults;
 let camoConfig = new CamoConfig();
+let prometheusConfig = new PrometheusConfig();
 
 /**
  * Initializes the configuration from the given YAML file
@@ -191,6 +184,7 @@ exports.load = function (file) {
     LOGGER.info("Loaded configuration from " + file);
 
     loadCamoConfig();
+    loadPrometheusConfig();
 };
 
 function loadCamoConfig() {
@@ -210,6 +204,28 @@ function loadCamoConfig() {
             LOGGER.error(`Error in conf/camo.toml: ${error} (line ${error.line})`);
         } else {
             LOGGER.error(`Error loading conf/camo.toml: ${error.stack}`);
+        }
+    }
+}
+
+function loadPrometheusConfig() {
+    try {
+        prometheusConfig = loadFromToml(PrometheusConfig,
+                path.resolve(__dirname, '..', 'conf', 'prometheus.toml'));
+        const enabled = prometheusConfig.isEnabled() ? 'ENABLED' : 'DISABLED';
+        LOGGER.info('Loaded prometheus configuration from conf/prometheus.toml.  '
+                + `Prometheus listener is ${enabled}`);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            LOGGER.info('No prometheus configuration found, defaulting to disabled');
+            prometheusConfig = new PrometheusConfig();
+            return;
+        }
+
+        if (typeof error.line !== 'undefined') {
+            LOGGER.error(`Error in conf/prometheus.toml: ${error} (line ${error.line})`);
+        } else {
+            LOGGER.error(`Error loading conf/prometheus.toml: ${error.stack}`);
         }
     }
 }
@@ -390,6 +406,12 @@ function preprocessConfig(cfg) {
     });
     cfg["channel-blacklist"] = tbl;
 
+    /* Check channel path */
+    if(!/^[-\w]+$/.test(cfg["channel-path"])){
+        LOGGER.error("Channel paths may only use the same characters as usernames and channel names.");
+        process.exit(78); // sysexits.h for bad config
+    }
+
     if (cfg["link-domain-blacklist"].length > 0) {
         cfg["link-domain-blacklist-regex"] = new RegExp(
                 cfg["link-domain-blacklist"].join("|").replace(/\./g, "\\."), "gi");
@@ -476,4 +498,8 @@ exports.set = function (key, value) {
 
 exports.getCamoConfig = function getCamoConfig() {
     return camoConfig;
+};
+
+exports.getPrometheusConfig = function getPrometheusConfig() {
+    return prometheusConfig;
 };

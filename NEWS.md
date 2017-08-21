@@ -1,3 +1,61 @@
+2017-07-22
+==========
+
+Support for the old version of Vimeo's OAuth API (the `vimeo-oauth`
+configuration block) has been dropped.  It's unlikely anyone was using this,
+since you haven't been able to register new API keys for it in years (it was
+superseded by a newer OAuth API, which CyTube does not support), and in fact I
+lost my credentials for this API and no longer have a way to test it.
+
+Vimeo videos can still be added -- the metadata will be queried from the
+anonymous API which has been the default since the beginning.
+
+2017-07-17
+==========
+
+The `stats` database table and associated ACP subpage have been removed in favor
+of integration with [Prometheus](https://prometheus.io/).  You can enable
+Prometheus reporting by copying `conf/example/prometheus.toml` to
+`conf/prometheus.toml` and editing it to your liking.  I recommend integrating
+Prometheus with [Grafana](https://grafana.com/) for dashboarding needs.
+
+The particular metrics that were saved in the `stats` table are reported by the
+following Prometheus metrics:
+
+  * Channel count: `cytube_channels_num_active` gauge.
+  * User count: `cytube_sockets_num_connected` gauge (labeled by socket.io
+    transport).
+  * CPU/Memory: default metrics emitted by the
+    [`prom-client`](https://github.com/siimon/prom-client) module.
+
+More Prometheus metrics will be added in the future to make CyTube easier to
+monitor :)
+
+2017-07-15
+==========
+
+The latest commit upgrades `socket.io` to version 2.0, a major version change
+from 1.4.  This release improves performance by switching to `uws` for the
+websocket transport, and fixes several bugs; you can read about it
+[here](https://github.com/socketio/socket.io/releases/tag/2.0.0).
+
+For browser clients, the upgrade should basically just work with no
+intervention.  For node.js clients, all that is needed is to upgrade
+`socket.io-client` to 2.0.  For other clients, work required may vary depending
+on whether the implementation has compatibility problems with 2.0.
+
+2017-06-20
+==========
+
+The latest commit drops support for node.js versions below 6 (the [current
+LTS](https://github.com/nodejs/LTS#lts-schedule1)).  This is to allow the babel
+preset to avoid generating inefficient code to polyfill ES2015+ features that
+are now implemented in the node.js core.
+
+New versions of node.js can be downloaded from the [node.js
+website](https://nodejs.org/en/download/), if they are not already available in
+your distribution's package manager.
+
 2017-03-20
 ==========
 

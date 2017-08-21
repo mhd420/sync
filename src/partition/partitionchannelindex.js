@@ -1,10 +1,9 @@
 import Promise from 'bluebird';
 import uuid from 'uuid';
-import { runLuaScript } from 'cytube-common/lib/redis/lualoader';
+import { runLuaScript } from '../redis/lualoader';
 import path from 'path';
-import { LoggerFactory } from '@calzoneman/jsli';
 
-const LOGGER = LoggerFactory.getLogger('partitionchannelindex');
+const LOGGER = require('@calzoneman/jsli')('partitionchannelindex');
 
 var SERVER = null;
 const CHANNEL_INDEX = 'publicChannelList';

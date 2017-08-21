@@ -1,16 +1,17 @@
-import { loadFromToml } from 'cytube-common/lib/configuration/configloader';
+import { loadFromToml } from '../configuration/configloader';
 import { PartitionConfig } from './partitionconfig';
 import { PartitionDecider } from './partitiondecider';
 import { PartitionClusterClient } from '../io/cluster/partitionclusterclient';
-import RedisClientProvider from 'cytube-common/lib/redis/redisclientprovider';
-import logger from 'cytube-common/lib/logger';
+import RedisClientProvider from '../redis/redisclientprovider';
 import LegacyConfig from '../config';
 import path from 'path';
 import { AnnouncementRefresher } from './announcementrefresher';
 import { RedisPartitionMapReloader } from './redispartitionmapreloader';
+import { RedisMessageBus } from '../pubsub/redis';
 
 const PARTITION_CONFIG_PATH = path.resolve(__dirname, '..', '..', 'conf',
                                            'partitions.toml');
+const logger = require('@calzoneman/jsli')('PartitionModule');
 
 class PartitionModule {
     constructor() {
@@ -23,7 +24,6 @@ class PartitionModule {
     }
 
     initConfig() {
-        logger.initialize(null, null, LegacyConfig.get('debug'));
         try {
             this.partitionConfig = this.loadPartitionConfig();
         } catch (error) {
@@ -98,11 +98,25 @@ class PartitionModule {
             const provider = this.getRedisClientProvider();
             this.announcementRefresher = new AnnouncementRefresher(
                     provider.get(),
-                    provider.get()
+                    provider.get(),
+                    this.partitionConfig.getAnnouncementChannel()
             );
         }
 
         return this.announcementRefresher;
+    }
+
+    getGlobalMessageBus() {
+        if (!this.globalMessageBus) {
+            const provider = this.getRedisClientProvider();
+            this.globalMessageBus = new RedisMessageBus(
+                provider.get(),
+                provider.get(),
+                this.partitionConfig.getGlobalMessageBusChannel()
+            );
+        }
+
+        return this.globalMessageBus;
     }
 }
 

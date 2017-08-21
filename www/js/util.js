@@ -56,6 +56,8 @@ function formatURL(data) {
             return "https://streamable.com/" + data.id;
         case "tc":
             return "https://clips.twitch.tv/" + data.id;
+        case "cm":
+            return data.id;
         default:
             return "#";
     }
@@ -87,7 +89,6 @@ function formatUserlistItem(div) {
         profile: div.data("profile") || { image: "", text: ""},
         leader: div.data("leader") || false,
         icon: div.data("icon") || false,
-        afk: div.data("afk") || false
     };
     var name = $(div.children()[1]);
     name.removeClass();
@@ -95,19 +96,20 @@ function formatUserlistItem(div) {
     name.addClass(getNameColor(data.rank));
     div.find(".profile-box").remove();
 
-    if (data.afk) {
+    var meta = div.data().meta || {}; // Not sure how this could happen.
+    if (meta.afk) {
         div.addClass("userlist_afk");
     } else {
         div.removeClass("userlist_afk");
     }
 
-    if (div.data("meta") && div.data("meta").muted) {
+    if (meta.muted) {
         div.addClass("userlist_muted");
     } else {
         div.removeClass("userlist_muted");
     }
 
-    if (div.data("meta") && div.data("meta").smuted) {
+    if (meta.smuted) {
         div.addClass("userlist_smuted");
     } else {
         div.removeClass("userlist_smuted");
@@ -173,7 +175,7 @@ function formatUserlistItem(div) {
     if(data.leader) {
         $("<span/>").addClass("glyphicon glyphicon-star-empty").appendTo(icon);
     }
-    if(data.afk) {
+    if(div.data().meta.afk) {
         name.css("font-style", "italic");
         $("<span/>").addClass("glyphicon glyphicon-time").appendTo(icon);
     }
@@ -398,7 +400,7 @@ function calcUserBreakdown() {
 
         total++;
 
-        if($(item).data("afk"))
+        if($(item).data().meta.afk)
             breakdown["AFK"]++;
     });
 
@@ -660,7 +662,6 @@ function saveUserOptions() {
     USEROPTS.layout               = $("#us-layout").val();
     USEROPTS.ignore_channelcss    = $("#us-no-channelcss").prop("checked");
     USEROPTS.ignore_channeljs     = $("#us-no-channeljs").prop("checked");
-    USEROPTS.secure_connection    = $("#us-ssl").prop("checked");
 
     USEROPTS.synch                = $("#us-synch").prop("checked");
     USEROPTS.sync_accuracy        = parseFloat($("#us-synch-accuracy").val()) || 2;
@@ -1084,12 +1085,13 @@ function clearSearchResults() {
     }
 }
 
-function addLibraryButtons(li, id, source) {
+function addLibraryButtons(li, item, source) {
     var btns = $("<div/>").addClass("btn-group")
         .addClass("pull-left")
         .prependTo(li);
 
-    var type = (source === "library") ? "lib" : source;
+    var id = item.id;
+    var type = item.type;
 
     if(hasPermission("playlistadd")) {
         if(hasPermission("playlistnext")) {
@@ -1413,6 +1415,12 @@ function parseMediaLink(url) {
             type: "fi"
         };
     }
+    if ((m = url.match(/^cm:(.*)/))) {
+        return {
+            id: m[1],
+            type: "cm"
+        };
+    }
     // Generic for the rest.
     if ((m = url.match(/^([a-z]{2}):([^\?&#]+)/))) {
         return {
@@ -1430,6 +1438,11 @@ function parseMediaLink(url) {
                 msg: "Raw files must begin with 'https'.  Plain http is not supported."
             });
             throw new Error("ERROR_QUEUE_HTTP");
+        } else if (tmp.match(/\.json$/)) {
+            return {
+                id: url,
+                type: "cm"
+            };
         } else if (tmp.match(/\.(mp4|flv|webm|og[gv]|mp3|mov|m4a)$/)) {
             return {
                 id: url,
@@ -1885,9 +1898,6 @@ handleWindowResize();
 function removeVideo(event) {
     try {
         PLAYER.setVolume(0);
-        if (PLAYER.type === "rv") {
-            killVideoUntilItIsDead($(PLAYER.player));
-        }
     } catch (e) {
     }
 
@@ -2095,6 +2105,11 @@ function errDialog(err) {
  * 2016-12-08
  * I *promise* that one day I will actually split this file into submodules
  * -cal
+ */
+
+/**
+ * modalAlert accepts options { title, textContent, htmlContent }
+ * All are optional
  */
 function modalAlert(options) {
     if (typeof options !== "object" || options === null) {
@@ -2634,6 +2649,14 @@ function formatUserPlaylistList() {
 }
 
 function loadEmotes(data) {
+    function sanitizeText(str) {
+        str = str.replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;");
+        return str;
+    }
+
     CHANNEL.emotes = [];
     CHANNEL.emoteMap = {};
     CHANNEL.badEmotes = [];
@@ -2645,7 +2668,7 @@ function loadEmotes(data) {
                 // Emotes with spaces can't be hashmapped
                 CHANNEL.badEmotes.push(e);
             } else {
-                CHANNEL.emoteMap[e.name] = e;
+                CHANNEL.emoteMap[sanitizeText(e.name)] = e;
             }
         } else {
             console.error("Rejecting invalid emote: " + JSON.stringify(e));
@@ -2757,32 +2780,6 @@ function initPm(user) {
     });
 
     return pm;
-}
-
-function killVideoUntilItIsDead(video) {
-    try {
-        video[0].volume = 0;
-        video[0].muted = true;
-        video.attr("src", "");
-        video.remove();
-    } catch (e) {
-    }
-}
-
-function fallbackRaw(data) {
-    $("<div/>").insertBefore($("#ytapiplayer")).attr("id", "ytapiplayer");
-    $("video").each(function () {
-        killVideoUntilItIsDead($(this));
-    });
-    $("audio").each(function () {
-        killVideoUntilItIsDead($(this));
-    });
-    data.type = "fl";
-    data.url = data.direct.sd.url;
-    PLAYER.player = undefined;
-    PLAYER = new FlashPlayer(data);
-
-    handleMediaUpdate(data);
 }
 
 function checkScriptAccess(source, type, cb) {
@@ -2916,51 +2913,6 @@ function formatScriptAccessPrefs() {
                 tr.remove();
             });
     });
-}
-
-/*
-    VIMEO SIMULATOR 2014
-
-    Vimeo decided to block my domain.  After repeated emails, they refused to
-    unblock it.  Rather than give in to their demands, there is a serverside
-    option which extracts direct links to the h264 encoded MP4 video files.
-    These files can be loaded in a custom player to allow Vimeo playback without
-    triggering their dumb API domain block.
-
-    It's a little bit hacky, but my only other option is to keep buying new
-    domains every time one gets blocked.  No thanks to Vimeo, who were of no help
-    and unwilling to compromise on the issue.
-*/
-function vimeoSimulator2014(data) {
-    /* Vimeo Simulator uses the raw file player */
-    data.type = "fi";
-
-    /* Convert youtube-style quality key to vimeo workaround quality */
-    var q = {
-        small: "mobile",
-        medium: "sd",
-        large: "sd",
-        hd720: "hd",
-        hd1080:"hd",
-        highres: "hd"
-    }[USEROPTS.default_quality] || "sd";
-
-    var fallback = {
-        hd: "sd",
-        sd: "mobile",
-        mobile: false
-    };
-
-    /* Pick highest quality less than or equal to user's preference from the options */
-    while (!(q in data.meta.direct) && q != false) {
-        q = fallback[q];
-    }
-    if (!q) {
-        q = "sd";
-    }
-
-    data.url = data.meta.direct[q].url;
-    return data;
 }
 
 function EmoteList(selector, emoteClickCallback) {

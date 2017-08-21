@@ -13,9 +13,15 @@ var Streamable = require("cytube-mediaquery/lib/provider/streamable");
 var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
 var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
 var TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
-import { LoggerFactory } from '@calzoneman/jsli';
+import { Counter } from 'prom-client';
+import { lookup as lookupCustomMetadata } from './custom-media';
 
-const LOGGER = LoggerFactory.getLogger('get-info');
+const LOGGER = require('@calzoneman/jsli')('get-info');
+const lookupCounter = new Counter({
+    name: 'cytube_media_lookups_total',
+    help: 'Count of media lookups',
+    labelNames: ['shortCode']
+});
 
 var urlRetrieve = function (transport, options, callback) {
     var req = transport.request(options, function (res) {
@@ -136,59 +142,11 @@ var Getters = {
             return;
         }
 
-        if (Config.get("vimeo-oauth.enabled")) {
-            return Getters.vi_oauth(id, callback);
-        }
-
         Vimeo.lookup(id).then(video => {
             video = new Media(video.id, video.title, video.duration, "vi");
             callback(null, video);
         }).catch(error => {
             callback(error.message);
-        });
-    },
-
-    vi_oauth: function (id, callback) {
-        var OAuth = require("oauth");
-        var oa = new OAuth.OAuth(
-            "https://vimeo.com/oauth/request_token",
-            "https://vimeo.com/oauth/access_token",
-            Config.get("vimeo-oauth.consumer-key"),
-            Config.get("vimeo-oauth.secret"),
-            "1.0",
-            null,
-            "HMAC-SHA1"
-        );
-
-        oa.get("https://vimeo.com/api/rest/v2?format=json" +
-               "&method=vimeo.videos.getInfo&video_id=" + id,
-            null,
-            null,
-        function (err, data, res) {
-            if (err) {
-                return callback(err, null);
-            }
-
-            try {
-                data = JSON.parse(data);
-
-                if (data.stat !== "ok") {
-                    return callback(data.err.msg, null);
-                }
-
-                var video = data.video[0];
-
-                if (video.embed_privacy !== "anywhere") {
-                    return callback("Embedding disabled", null);
-                }
-
-                var id = video.id;
-                var seconds = parseInt(video.duration);
-                var title = video.title;
-                callback(null, new Media(id, title, seconds, "vi"));
-            } catch (e) {
-                callback("Error handling Vimeo response", null);
-            }
         });
     },
 
@@ -510,7 +468,6 @@ var Getters = {
 
     /* google docs */
     gd: function (id, callback) {
-        GoogleDrive.setHTML5HackEnabled(Config.get("google-drive.html5-hack-enabled"));
         var data = {
             type: "googledrive",
             kind: "single",
@@ -583,6 +540,16 @@ var Getters = {
         }).catch(function (err) {
             callback(err.message || err, null);
         });
+    },
+
+    /* custom media - https://github.com/calzoneman/sync/issues/655 */
+    cm: async function (id, callback) {
+        try {
+            const media = await lookupCustomMetadata(id);
+            process.nextTick(callback, false, media);
+        } catch (error) {
+            process.nextTick(callback, error.message);
+        }
     }
 };
 
@@ -590,6 +557,8 @@ module.exports = {
     Getters: Getters,
     getMedia: function (id, type, callback) {
         if(type in this.Getters) {
+            LOGGER.info("Looking up %s:%s", type, id);
+            lookupCounter.labels(type).inc(1, new Date());
             this.Getters[type](id, callback);
         } else {
             callback("Unknown media type '" + type + "'", null);

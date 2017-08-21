@@ -4,12 +4,20 @@ var Config = require("./config");
 var tables = require("./database/tables");
 var net = require("net");
 var util = require("./utilities");
-import * as Metrics from 'cytube-common/lib/metrics/metrics';
-import { LoggerFactory } from '@calzoneman/jsli';
+import * as Metrics from './metrics/metrics';
 import knex from 'knex';
 import { GlobalBanDB } from './db/globalban';
+import { Summary, Counter } from 'prom-client';
 
-const LOGGER = LoggerFactory.getLogger('database');
+const LOGGER = require('@calzoneman/jsli')('database');
+const queryLatency = new Summary({
+    name: 'cytube_db_query_duration_seconds',
+    help: 'DB query latency (including time spent acquiring connections)'
+});
+const queryCount = new Counter({
+    name: 'cytube_db_queries_total',
+    help: 'DB query count'
+});
 
 let db = null;
 let globalBanDB = null;
@@ -30,7 +38,8 @@ class Database {
                 },
                 pool: {
                     min: Config.get('mysql.pool-size'),
-                    max: Config.get('mysql.pool-size')
+                    max: Config.get('mysql.pool-size'),
+                    refreshIdle: false
                 },
                 debug: !!process.env.KNEX_DEBUG
             };
@@ -41,8 +50,11 @@ class Database {
 
     runTransaction(fn) {
         const timer = Metrics.startTimer('db:queryTime');
+        const end = queryLatency.startTimer();
         return this.knex.transaction(fn).finally(() => {
+            end();
             Metrics.stopTimer(timer);
+            queryCount.inc(1, new Date());
         });
     }
 }
@@ -108,6 +120,7 @@ module.exports.query = function (query, sub, callback) {
         console.log(query);
     }
 
+    const end = queryLatency.startTimer();
     db.knex.raw(query, sub)
         .then(res => {
             process.nextTick(callback, null, res[0]);
@@ -115,7 +128,9 @@ module.exports.query = function (query, sub, callback) {
             LOGGER.error('Legacy DB query failed.  Query: %s, Substitutions: %j, Error: %s', query, sub, error);
             process.nextTick(callback, 'Database failure', null);
         }).finally(() => {
+            end();
             Metrics.stopTimer(timer);
+            queryCount.inc(1, new Date());
         });
 };
 
@@ -357,37 +372,6 @@ module.exports.getIPs = function (name, callback) {
         }
         callback(err, ips);
     });
-};
-
-/* END REGION */
-
-/* REGION stats */
-
-module.exports.addStatPoint = function (time, ucount, ccount, mem, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    var query = "INSERT INTO stats VALUES (?, ?, ?, ?)";
-    module.exports.query(query, [time, ucount, ccount, mem], callback);
-};
-
-module.exports.pruneStats = function (before, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    var query = "DELETE FROM stats WHERE time < ?";
-    module.exports.query(query, [before], callback);
-};
-
-module.exports.listStats = function (callback) {
-    if (typeof callback !== "function") {
-        return;
-    }
-
-    var query = "SELECT * FROM stats ORDER BY time ASC";
-    module.exports.query(query, callback);
 };
 
 /* END REGION */

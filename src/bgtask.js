@@ -8,31 +8,10 @@
 var Config = require("./config");
 var db = require("./database");
 var Promise = require("bluebird");
-import { LoggerFactory } from '@calzoneman/jsli';
 
-const LOGGER = LoggerFactory.getLogger('bgtask');
+const LOGGER = require('@calzoneman/jsli')('bgtask');
 
 var init = null;
-
-/* Stats */
-function initStats(Server) {
-    var STAT_INTERVAL = parseInt(Config.get("stats.interval"));
-    var STAT_EXPIRE = parseInt(Config.get("stats.max-age"));
-
-    setInterval(function () {
-        var chancount = Server.channels.length;
-        var usercount = 0;
-        Server.channels.forEach(function (chan) {
-            usercount += chan.users.length;
-        });
-
-        var mem = process.memoryUsage().rss;
-
-        db.addStatPoint(Date.now(), usercount, chancount, mem, function () {
-            db.pruneStats(Date.now() - STAT_EXPIRE);
-        });
-    }, STAT_INTERVAL);
-}
 
 /* Alias cleanup */
 function initAliasCleanup(Server) {
@@ -61,6 +40,7 @@ function initPasswordResetCleanup(Server) {
 }
 
 function initChannelDumper(Server) {
+    const chanPath = Config.get('channel-path');
     var CHANNEL_SAVE_INTERVAL = parseInt(Config.get("channel-save-interval"))
                                 * 60000;
     setInterval(function () {
@@ -70,9 +50,9 @@ function initChannelDumper(Server) {
             return Promise.delay(wait).then(() => {
                 if (!chan.dead && chan.users && chan.users.length > 0) {
                     return chan.saveState().tap(() => {
-                        LOGGER.info(`Saved /r/${chan.name}`);
+                        LOGGER.info(`Saved /${chanPath}/${chan.name}`);
                     }).catch(err => {
-                        LOGGER.error(`Failed to save /r/${chan.name}: ${err.stack}`);
+                        LOGGER.error(`Failed to save /${chanPath}/${chan.name}: ${err.stack}`);
                     });
                 }
             }).catch(error => {
@@ -91,7 +71,6 @@ module.exports = function (Server) {
     }
 
     init = Server;
-    initStats(Server);
     initAliasCleanup(Server);
     initChannelDumper(Server);
     initPasswordResetCleanup(Server);

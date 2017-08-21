@@ -1,15 +1,14 @@
 // @flow
 import crypto from 'crypto';
-import { LoggerFactory } from '@calzoneman/jsli';
 import * as urlparse from 'url';
 import { CamoConfig } from './configuration/camoconfig';
 
-const LOGGER = LoggerFactory.getLogger('camo');
+const LOGGER = require('@calzoneman/jsli')('camo');
 
 function isWhitelisted(camoConfig: CamoConfig, url: string): boolean {
-    const whitelistedDomains = camoConfig.getWhitelistedDomains();
+    const whitelistedDomains = camoConfig.getWhitelistedDomainsRegexp();
     const parsed = urlparse.parse(url);
-    return whitelistedDomains.includes(parsed.hostname);
+    return whitelistedDomains.test('.' + parsed.hostname);
 }
 
 export function camoify(camoConfig: CamoConfig, url: string): string {
@@ -24,8 +23,14 @@ export function camoify(camoConfig: CamoConfig, url: string): string {
     const hmac = crypto.createHmac('sha1', camoConfig.getKey());
     hmac.update(url);
     const digest = hmac.digest('hex');
-    const hexUrl = Buffer.from(url, 'utf8').toString('hex');
-    return `${camoConfig.getServer()}/${digest}/${hexUrl}`;
+    // https://github.com/atmos/camo#url-formats
+    if (camoConfig.getEncoding() === 'hex') {
+        const hexUrl = Buffer.from(url, 'utf8').toString('hex');
+        return `${camoConfig.getServer()}/${digest}/${hexUrl}`;
+    } else {
+        const encoded = encodeURIComponent(url);
+        return `${camoConfig.getServer()}/${digest}?url=${encoded}`;
+    }
 }
 
 export function transformImgTags(camoConfig: CamoConfig, tagName: string, attribs: Object) {

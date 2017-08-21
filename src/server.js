@@ -4,9 +4,8 @@ var Config = require("./config");
 var Promise = require("bluebird");
 import * as ChannelStore from './channel-storage/channelstore';
 import { EventEmitter } from 'events';
-import { LoggerFactory } from '@calzoneman/jsli';
 
-const LOGGER = LoggerFactory.getLogger('server');
+const LOGGER = require('@calzoneman/jsli')('server');
 
 module.exports = {
     init: function () {
@@ -52,6 +51,7 @@ import session from './session';
 import { LegacyModule } from './legacymodule';
 import { PartitionModule } from './partition/partitionmodule';
 import * as Switches from './switches';
+import { Gauge } from 'prom-client';
 
 var Server = function () {
     var self = this;
@@ -62,21 +62,20 @@ var Server = function () {
     self.announcement = null;
     self.infogetter = null;
     self.servers = {};
+    self.chanPath = Config.get('channel-path');
 
-    // backend init
     var initModule;
-    if (Config.get("new-backend")) {
-        if (Config.get("dual-backend")) {
-            Switches.setActive(Switches.DUAL_BACKEND, true);
-        }
-        const BackendModule = require('./backend/backendmodule').BackendModule;
-        initModule = this.initModule = new BackendModule();
-    } else if (Config.get('enable-partition')) {
+    if (Config.get('enable-partition')) {
         initModule = this.initModule = new PartitionModule();
         self.partitionDecider = initModule.getPartitionDecider();
     } else {
         initModule = this.initModule = new LegacyModule();
     }
+
+    const globalMessageBus = this.initModule.getGlobalMessageBus();
+    globalMessageBus.on('UserProfileChanged', this.handleUserProfileChange.bind(this));
+    globalMessageBus.on('ChannelDeleted', this.handleChannelDelete.bind(this));
+    globalMessageBus.on('ChannelRegistered', this.handleChannelRegister.bind(this));
 
     // database init ------------------------------------------------------
     var Database = require("./database");
@@ -102,7 +101,8 @@ var Server = function () {
             ioConfig,
             clusterClient,
             channelIndex,
-            session);
+            session,
+            globalMessageBus);
 
     // http/https/sio server init -----------------------------------------
     var key = "", cert = "", ca = undefined;
@@ -154,6 +154,12 @@ var Server = function () {
     // background tasks init ----------------------------------------------
     require("./bgtask")(self);
 
+    // prometheus server
+    const prometheusConfig = Config.getPrometheusConfig();
+    if (prometheusConfig.isEnabled()) {
+        require("./prometheus-server").init(prometheusConfig);
+    }
+
     // setuid
     require("./setuid");
 
@@ -196,28 +202,6 @@ Server.prototype.reloadCertificateData = function reloadCertificateData() {
     });
 };
 
-Server.prototype.getHTTPIP = function (req) {
-    var ip = req.ip;
-    if (ip === "127.0.0.1" || ip === "::1") {
-        var fwd = req.header("x-forwarded-for");
-        if (fwd && typeof fwd === "string") {
-            return fwd;
-        }
-    }
-    return ip;
-};
-
-Server.prototype.getSocketIP = function (socket) {
-    var raw = socket.handshake.address.address;
-    if (raw === "127.0.0.1" || raw === "::1") {
-        var fwd = socket.handshake.headers["x-forwarded-for"];
-        if (fwd && typeof fwd === "string") {
-            return fwd;
-        }
-    }
-    return raw;
-};
-
 Server.prototype.isChannelLoaded = function (name) {
     name = name.toLowerCase();
     for (var i = 0; i < this.channels.length; i++) {
@@ -227,6 +211,10 @@ Server.prototype.isChannelLoaded = function (name) {
     return false;
 };
 
+const promActiveChannels = new Gauge({
+    name: 'cytube_channels_num_active',
+    help: 'Number of channels currently active'
+});
 Server.prototype.getChannel = function (name) {
     var cname = name.toLowerCase();
     if (this.partitionDecider &&
@@ -243,6 +231,7 @@ Server.prototype.getChannel = function (name) {
     }
 
     var c = new Channel(name);
+    promActiveChannels.inc();
     c.on("empty", function () {
         self.unloadChannel(c);
     });
@@ -264,7 +253,7 @@ Server.prototype.unloadChannel = function (chan, options) {
 
     if (!options.skipSave) {
         chan.saveState().catch(error => {
-            LOGGER.error(`Failed to save /r/${chan.name} for unload: ${error.stack}`);
+            LOGGER.error(`Failed to save /${this.chanPath}/${chan.name} for unload: ${error.stack}`);
         });
     }
 
@@ -311,6 +300,7 @@ Server.prototype.unloadChannel = function (chan, options) {
         }
     }
     chan.dead = true;
+    promActiveChannels.dec();
 };
 
 Server.prototype.packChannelList = function (publicOnly, isAdmin) {
@@ -354,9 +344,9 @@ Server.prototype.shutdown = function () {
     Promise.map(this.channels, channel => {
         try {
             return channel.saveState().tap(() => {
-                LOGGER.info(`Saved /r/${channel.name}`);
+                LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
             }).catch(err => {
-                LOGGER.error(`Failed to save /r/${channel.name}: ${err.stack}`);
+                LOGGER.error(`Failed to save /${this.chanPath}/${channel.name}: ${err.stack}`);
             });
         } catch (error) {
             LOGGER.error(`Failed to save channel: ${error.stack}`);
@@ -391,7 +381,7 @@ Server.prototype.handlePartitionMapChange = function () {
                 });
                 this.unloadChannel(channel, { skipSave: true });
             }).catch(error => {
-                LOGGER.error(`Failed to unload /r/${channel.name} for ` +
+                LOGGER.error(`Failed to unload /${this.chanPath}/${channel.name} for ` +
                                   `partition map flip: ${error.stack}`);
             });
         }
@@ -406,4 +396,91 @@ Server.prototype.reloadPartitionMap = function () {
     }
 
     this.initModule.getPartitionMapReloader().reload();
+};
+
+Server.prototype.handleUserProfileChange = function (event) {
+    try {
+        const lname = event.user.toLowerCase();
+
+        // Probably not the most efficient thing in the world, but w/e
+        // profile changes are not high volume
+        this.channels.forEach(channel => {
+            if (channel.dead) return;
+
+            channel.users.forEach(user => {
+                if (user.getLowerName() === lname && user.account.user) {
+                    user.account.user.profile = {
+                        image: event.profile.image,
+                        text: event.profile.text
+                    };
+
+                    user.account.update();
+
+                    channel.sendUserProfile(channel.users, user);
+
+                    LOGGER.info(
+                            'Updated profile for user %s in channel %s',
+                            lname,
+                            channel.name
+                    );
+                }
+            });
+        });
+    } catch (error) {
+        LOGGER.error('handleUserProfileChange failed: %s', error);
+    }
+};
+
+Server.prototype.handleChannelDelete = function (event) {
+    try {
+        const lname = event.channel.toLowerCase();
+
+        this.channels.forEach(channel => {
+            if (channel.dead) return;
+
+            if (channel.uniqueName === lname) {
+                channel.clearFlag(Flags.C_REGISTERED);
+
+                const users = Array.prototype.slice.call(channel.users);
+                users.forEach(u => {
+                    u.kick('Channel deleted');
+                });
+
+                if (!channel.dead) {
+                    channel.emit('empty');
+                }
+
+                LOGGER.info('Processed deleted channel %s', lname);
+            }
+        });
+    } catch (error) {
+        LOGGER.error('handleChannelDelete failed: %s', error);
+    }
+};
+
+Server.prototype.handleChannelRegister = function (event) {
+    try {
+        const lname = event.channel.toLowerCase();
+
+        this.channels.forEach(channel => {
+            if (channel.dead) return;
+
+            if (channel.uniqueName === lname) {
+                channel.clearFlag(Flags.C_REGISTERED);
+
+                const users = Array.prototype.slice.call(channel.users);
+                users.forEach(u => {
+                    u.kick('Channel reloading');
+                });
+
+                if (!channel.dead) {
+                    channel.emit('empty');
+                }
+
+                LOGGER.info('Processed registered channel %s', lname);
+            }
+        });
+    } catch (error) {
+        LOGGER.error('handleChannelRegister failed: %s', error);
+    }
 };

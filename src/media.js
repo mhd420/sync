@@ -39,7 +39,7 @@ Media.prototype = {
                 scuri: this.meta.scuri,
                 embed: this.meta.embed,
                 gdrive_subtitles: this.meta.gdrive_subtitles,
-                html5hack: this.meta.html5hack
+                textTracks: this.meta.textTracks
             }
         };
     },

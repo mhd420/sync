@@ -8,9 +8,10 @@ var Flags = require("../flags");
 var db = require("../database");
 var CustomEmbedFilter = require("../customembed").filter;
 var XSS = require("../xss");
-import { LoggerFactory } from '@calzoneman/jsli';
+import counters from '../counters';
+import { Counter } from 'prom-client';
 
-const LOGGER = LoggerFactory.getLogger('playlist');
+const LOGGER = require('@calzoneman/jsli')('playlist');
 
 const MAX_ITEMS = Config.get("playlist.max-items");
 // Limit requestPlaylist to once per 60 seconds
@@ -152,13 +153,7 @@ PlaylistModule.prototype.load = function (data) {
 };
 
 PlaylistModule.prototype.save = function (data) {
-    var arr = this.items.toArray().map(function (item) {
-        /* Clear Google Docs/Google+ and Vimeo meta */
-        if (item.media && item.media.meta) {
-            delete item.media.meta.direct;
-        }
-        return item;
-    });
+    var arr = this.items.toArray();
     var pos = 0;
     for (var i = 0; i < arr.length; i++) {
         if (this.current && arr[i].uid == this.current.uid) {
@@ -287,6 +282,11 @@ PlaylistModule.prototype.sendPlaylist = function (users) {
     });
 };
 
+const changeMediaCounter = new Counter({
+    name: 'cytube_playlist_plays_total',
+    help: 'Counter for number of playlist items played',
+    labelNames: ['shortCode']
+});
 PlaylistModule.prototype.sendChangeMedia = function (users) {
     if (!this.current || !this.current.media || this._refreshing) {
         return;
@@ -301,6 +301,7 @@ PlaylistModule.prototype.sendChangeMedia = function (users) {
         var m = this.current.media;
         this.channel.logger.log("[playlist] Now playing: " + m.title +
                                 " (" + m.type + ":" + m.id + ")");
+        changeMediaCounter.labels(m.type).inc(1, new Date());
     } else {
         users.forEach(function (u) {
             u.socket.emit("setCurrent", uid);
@@ -335,6 +336,10 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
 
     var id = data.id;
     var type = data.type;
+    if (type === "lib") {
+        LOGGER.warn("Outdated client: IP %s emitting queue with type=lib",
+                user.realip);
+    }
 
     if (data.pos !== "next" && data.pos !== "end") {
         return;
@@ -381,7 +386,7 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
             id: id
         });
         return;
-    } else if (type === "fi" && !perms.canAddRawFile(user)) {
+    } else if ((type === "fi" || type === "cm") && !perms.canAddRawFile(user)) {
         user.socket.emit("queueFail", {
             msg: "You don't have permission to add raw video files",
             link: link,
@@ -457,36 +462,25 @@ PlaylistModule.prototype.queueStandard = function (user, data) {
 
     const self = this;
     this.channel.refCounter.ref("PlaylistModule::queueStandard");
+    counters.add("playlist:queue:count", 1);
     this.semaphore.queue(function (lock) {
         var lib = self.channel.modules.library;
         if (lib && self.channel.is(Flags.C_REGISTERED) && !util.isLive(data.type)) {
+            // TODO: remove this check entirely once metrics are collected.
             lib.getItem(data.id, function (err, item) {
                 if (err && err !== "Item not in library") {
-                    error(err+"");
-                    self.channel.refCounter.unref("PlaylistModule::queueStandard");
-                    return lock.release();
-                }
-
-                // YouTube livestreams transition to becoming regular videos,
-                // breaking the cached duration of 0.
-                // In the future, the media cache should be decoupled from
-                // the library and this will no longer be an issue, but for now
-                // treat 0-length yt library entries as non-existent.
-                if (item !== null && item.type === "yt" && item.seconds === 0) {
-                    data.type = "yt"; // Kludge -- library queue has type: "lib"
-                    item = null;
-                }
-
-                if (item !== null) {
-                    /* Don't re-cache data we got from the library */
-                    data.shouldAddToLibrary = false;
-                    self._addItem(item, data, user, function () {
-                        lock.release();
-                        self.channel.refCounter.unref("PlaylistModule::queueStandard");
-                    });
+                    LOGGER.error("Failed to query for library item: %s", String(err));
+                } else if (err === "Item not in library") {
+                    counters.add("playlist:queue:library:miss", 1);
                 } else {
-                    handleLookup();
+                    // temp hack until all clients are updated.
+                    // previously, library search results would queue with
+                    // type "lib"; this has now been changed.
+                    data.type = item.type;
+                    counters.add("playlist:queue:library:hit", 1);
                 }
+
+                handleLookup();
             });
         } else {
             handleLookup();
@@ -754,7 +748,7 @@ PlaylistModule.prototype.handleAssignLeader = function (user, data) {
         this.leader = null;
         if (old.account.effectiveRank === 1.5) {
             old.account.effectiveRank = old.account.oldRank;
-            old.emit("effectiveRankChange", old.account.effectiveRank);
+            old.emit("effectiveRankChange", old.account.effectiveRank, 1.5);
             old.socket.emit("rank", old.account.effectiveRank);
         }
 
@@ -781,7 +775,7 @@ PlaylistModule.prototype.handleAssignLeader = function (user, data) {
             if (this.leader.account.effectiveRank < 1.5) {
                 this.leader.account.oldRank = this.leader.account.effectiveRank;
                 this.leader.account.effectiveRank = 1.5;
-                this.leader.emit("effectiveRankChange", 1.5);
+                this.leader.emit("effectiveRankChange", 1.5, this.leader.account.oldRank);
                 this.leader.socket.emit("rank", 1.5);
             }
 
@@ -935,28 +929,6 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
     if (media.meta.restricted) {
         user.socket.emit("queueWarn", {
             msg: "Video is blocked in the following countries: " + media.meta.restricted,
-            link: data.link
-        });
-    }
-
-    /* Warn about high bitrate for raw files */
-    if (media.type === "fi" && media.meta.bitrate > 1000) {
-        user.socket.emit("queueWarn", {
-            msg: "This video has a bitrate over 1000kbps.  Clients with slow " +
-                 "connections may experience lots of buffering.",
-            link: data.link
-        });
-    }
-
-    /* Warn about possibly unsupported formats */
-    if (media.type === "fi" && media.meta.codec &&
-                               media.meta.codec.indexOf("/") !== -1 &&
-                               media.meta.codec !== "mov/h264" &&
-                               media.meta.codec !== "flv/h264") {
-        user.socket.emit("queueWarn", {
-            msg: "The codec <code>" + media.meta.codec + "</code> is not supported " +
-                 "by all browsers, and is not supported by the flash fallback layer.  " +
-                 "This video may not play for some users.",
             link: data.link
         });
     }

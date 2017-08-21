@@ -10,10 +10,12 @@ import morgan from 'morgan';
 import csrf from './csrf';
 import * as HTTPStatus from './httpstatus';
 import { CSRFError, HTTPError } from '../errors';
-import counters from "../counters";
-import { LoggerFactory } from '@calzoneman/jsli';
+import counters from '../counters';
+import { Summary, Counter } from 'prom-client';
+import session from '../session';
+const verifySessionAsync = require('bluebird').promisify(session.verifySession);
 
-const LOGGER = LoggerFactory.getLogger('webserver');
+const LOGGER = require('@calzoneman/jsli')('webserver');
 
 function initializeLog(app) {
     const logFormat = ':real-address - :remote-user [:date] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"';
@@ -26,6 +28,35 @@ function initializeLog(app) {
     app.use(morgan(logFormat, {
         stream: outputStream
     }));
+}
+
+function initPrometheus(app) {
+    const latency = new Summary({
+        name: 'cytube_http_req_duration_seconds',
+        help: 'HTTP Request latency from execution of the first middleware '
+                + 'until the "finish" event on the response object.',
+        labelNames: ['method', 'statusCode']
+    });
+    const requests = new Counter({
+        name: 'cytube_http_req_total',
+        help: 'HTTP Request count',
+        labelNames: ['method', 'statusCode']
+    });
+
+    app.use((req, res, next) => {
+        const startTime = process.hrtime();
+        res.on('finish', () => {
+            try {
+                const diff = process.hrtime(startTime);
+                const diffSec = diff[0] + diff[1]*1e-9;
+                latency.labels(req.method, res.statusCode).observe(diffSec);
+                requests.labels(req.method, res.statusCode).inc(1, new Date());
+            } catch (error) {
+                LOGGER.error('Failed to record HTTP Prometheus metrics: %s', error.stack);
+            }
+        });
+        next();
+    });
 }
 
 /**
@@ -131,12 +162,23 @@ module.exports = {
     /**
      * Initializes webserver callbacks
      */
-    init: function (app, webConfig, ioConfig, clusterClient, channelIndex, session) {
+    init: function (
+        app,
+        webConfig,
+        ioConfig,
+        clusterClient,
+        channelIndex,
+        session,
+        globalMessageBus
+    ) {
+        const chanPath = Config.get('channel-path');
+
+        initPrometheus(app);
         app.use((req, res, next) => {
             counters.add("http:request", 1);
             next();
         });
-        require('./middleware/x-forwarded-for')(app, webConfig);
+        require('./middleware/x-forwarded-for').initialize(app, webConfig);
         app.use(bodyParser.urlencoded({
             extended: false,
             limit: '1kb' // No POST data should ever exceed this size under normal usage
@@ -147,7 +189,7 @@ module.exports = {
         }
         app.use(cookieParser(webConfig.getCookieSecret()));
         app.use(csrf.init(webConfig.getCookieDomain()));
-        app.use('/r/:channel', require('./middleware/ipsessioncookie').ipSessionCookieMiddleware);
+        app.use(`/${chanPath}/:channel`, require('./middleware/ipsessioncookie').ipSessionCookieMiddleware);
         initializeLog(app);
         require('./middleware/authorize')(app, session);
 
@@ -176,7 +218,7 @@ module.exports = {
             LOGGER.info('Enabled express-minify for CSS and JS');
         }
 
-        require('./routes/channel')(app, ioConfig);
+        require('./routes/channel')(app, ioConfig, chanPath);
         require('./routes/index')(app, channelIndex, webConfig.getMaxIndexEntries());
         require('./routes/api')(app, channelIndex);
         app.get('/sioconfig(.json)?', handleLegacySocketConfig);
@@ -184,7 +226,7 @@ module.exports = {
         app.get('/useragreement', handleUserAgreement);
         require('./routes/contact')(app, webConfig);
         require('./auth').init(app);
-        require('./account').init(app);
+        require('./account').init(app, globalMessageBus);
         require('./acp').init(app);
         require('../google2vtt').attach(app);
         require('./routes/google_drive_userscript')(app);
@@ -196,5 +238,36 @@ module.exports = {
         initializeErrorHandlers(app);
     },
 
-    redirectHttps: redirectHttps
+    redirectHttps: redirectHttps,
+
+    authorize: async function authorize(req) {
+        if (!req.signedCookies || !req.signedCookies.auth) {
+            return false;
+        }
+
+        try {
+            return await verifySessionAsync(req.signedCookies.auth);
+        } catch (error) {
+            return false;
+        }
+    },
+
+    setAuthCookie: function setAuthCookie(req, res, expiration, auth) {
+        if (req.hostname.indexOf(Config.get("http.root-domain")) >= 0) {
+            // Prevent non-root cookie from screwing things up
+            res.clearCookie("auth");
+            res.cookie("auth", auth, {
+                domain: Config.get("http.root-domain-dotted"),
+                expires: expiration,
+                httpOnly: true,
+                signed: true
+            });
+        } else {
+            res.cookie("auth", auth, {
+                expires: expiration,
+                httpOnly: true,
+                signed: true
+            });
+        }
+    }
 };

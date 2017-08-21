@@ -10,9 +10,8 @@ import Promise from 'bluebird';
 import { EventEmitter } from 'events';
 import { throttle } from '../util/throttle';
 import Logger from '../logger';
-import { LoggerFactory } from '@calzoneman/jsli';
 
-const LOGGER = LoggerFactory.getLogger('channel');
+const LOGGER = require('@calzoneman/jsli')('channel');
 
 const USERCOUNT_THROTTLE = 10000;
 
@@ -277,6 +276,8 @@ Channel.prototype.checkModules = function (fn, args, cb) {
     const self = this;
     const refCaller = `Channel::checkModules/${fn}`;
     this.waitFlag(Flags.C_READY, function () {
+        if (self.dead) return;
+
         self.refCounter.ref(refCaller);
         var keys = Object.keys(self.modules);
         var next = function (err, result) {
@@ -307,6 +308,7 @@ Channel.prototype.checkModules = function (fn, args, cb) {
 Channel.prototype.notifyModules = function (fn, args) {
     var self = this;
     this.waitFlag(Flags.C_READY, function () {
+        if (self.dead) return;
         var keys = Object.keys(self.modules);
         keys.forEach(function (k) {
             self.modules[k][fn].apply(self.modules[k], args);
@@ -319,6 +321,7 @@ Channel.prototype.joinUser = function (user, data) {
 
     self.refCounter.ref("Channel::user");
     self.waitFlag(Flags.C_READY, function () {
+
         /* User closed the connection before the channel finished loading */
         if (user.socket.disconnected) {
             self.refCounter.unref("Channel::user");
@@ -371,7 +374,7 @@ Channel.prototype.acceptUser = function (user) {
     user.socket.on("readChanLog", this.handleReadLog.bind(this, user));
 
     LOGGER.info(user.realip + " joined " + this.name);
-    if (user.socket._isUsingTor) {
+    if (user.socket.context.torConnection) {
         if (this.modules.options && this.modules.options.get("torbanned")) {
             user.kick("This channel has banned connections from Tor.");
             this.logger.log("[login] Blocked connection from Tor exit at " +
@@ -417,6 +420,15 @@ Channel.prototype.acceptUser = function (user) {
     if (!this.is(Flags.C_REGISTERED)) {
         user.socket.emit("channelNotRegistered");
     }
+
+    user.on('afk', function(afk){
+        self.sendUserMeta(self.users, user);
+        // TODO: Drop legacy setAFK frame after a few months
+        self.broadcastAll("setAFK", { name: user.getName(), afk: afk });
+    })
+    user.on("effectiveRankChange", (newRank, oldRank) => {
+        this.maybeResendUserlist(user, newRank, oldRank);
+    });
 };
 
 Channel.prototype.partUser = function (user) {
@@ -448,6 +460,15 @@ Channel.prototype.partUser = function (user) {
 
     this.refCounter.unref("Channel::user");
     user.die();
+};
+
+Channel.prototype.maybeResendUserlist = function maybeResendUserlist(user, newRank, oldRank) {
+    if ((newRank >= 2 && oldRank < 2)
+            || (newRank < 2 && oldRank >= 2)
+            || (newRank >= 255 && oldRank < 255)
+            || (newRank < 255 && oldRank >= 255)) {
+        this.sendUserlist([user]);
+    }
 };
 
 Channel.prototype.packUserData = function (user) {
