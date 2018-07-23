@@ -2,7 +2,6 @@
 
 var fs = require("graceful-fs");
 var path = require("path");
-import { sprintf } from 'sprintf-js';
 import { Logger as JsliLogger, LogLevel } from '@calzoneman/jsli';
 import jsli from '@calzoneman/jsli';
 
@@ -17,7 +16,7 @@ var Logger = function(filename) {
         flags: "a",
         encoding: "utf-8"
     });
-}
+};
 
 Logger.prototype.log = function () {
     var msg = "";
@@ -36,7 +35,7 @@ Logger.prototype.log = function () {
         errlog.log("Message was: " + msg);
         errlog.log(e);
     }
-}
+};
 
 Logger.prototype.close = function () {
     try {
@@ -44,15 +43,16 @@ Logger.prototype.close = function () {
     } catch(e) {
         errlog.log("Log close failed: " + this.filename);
     }
-}
+};
 
 function makeConsoleLogger(filename) {
+    /* eslint no-console: off */
     var log = new Logger(filename);
     log._log = log.log;
     log.log = function () {
         console.log.apply(console, arguments);
         this._log.apply(this, arguments);
-    }
+    };
     return log;
 }
 
@@ -80,7 +80,8 @@ class LegacyLogger extends JsliLogger {
     }
 }
 
-const level: LogLevel = !!process.env.DEBUG ? LogLevel.DEBUG : LogLevel.INFO;
+// TODO: allow reconfiguration of log level at runtime
+const level: LogLevel = process.env.DEBUG ? LogLevel.DEBUG : LogLevel.INFO;
 
 jsli.setLogBackend((loggerName) => {
     return new LegacyLogger(loggerName, level);

@@ -1,48 +1,7 @@
 (function () {
-    var root, crypto, net = false;
-
-    if (typeof window === "undefined") {
-        root = module.exports;
-    } else {
-        root = window.utils = {};
-    }
-
-    if (typeof require === "function") {
-        crypto = require("crypto");
-        net = require("net");
-    }
-
-    var Set = function (items) {
-        this._items = {};
-        var self = this;
-        if (items instanceof Array)
-            items.forEach(function (it) { self.add(it); });
-    };
-
-    Set.prototype.contains = function (what) {
-        return (what in this._items);
-    };
-
-    Set.prototype.add = function (what) {
-        this._items[what] = true;
-    };
-
-    Set.prototype.remove = function (what) {
-        if (what in this._items)
-            delete this._items[what];
-    };
-
-    Set.prototype.clear = function () {
-        this._items = {};
-    };
-
-    Set.prototype.forEach = function (fn) {
-        for (var k in this._items) {
-            fn(k);
-        }
-    };
-
-    root.Set = Set;
+    const root = module.exports;
+    const net = require("net");
+    const crypto = require("crypto");
 
     root.isValidChannelName = function (name) {
         return name.match(/^[\w-]{1,30}$/);
@@ -53,6 +12,10 @@
     },
 
     root.isValidEmail = function (email) {
+        if (typeof email !== "string") {
+            return false;
+        }
+
         if (email.length > 255) {
             return false;
         }
@@ -153,6 +116,8 @@
     root.parseTime = function (time) {
         var parts = time.split(":").reverse();
         var seconds = 0;
+        // TODO: consider refactoring to remove this suppression
+        /* eslint no-fallthrough: off */
         switch (parts.length) {
             case 3:
                 seconds += parseInt(parts[2]) * 3600;
@@ -220,8 +185,6 @@
                 return "https://vimeo.com/" + id;
             case "dm":
                 return "https://dailymotion.com/video/" + id;
-            case "vm":
-                return "https://vid.me/" + id;
             case "sc":
                 return id;
             case "li":
@@ -276,12 +239,12 @@
         var shasum = crypto.createHash("sha1");
         shasum.update(data);
         return shasum.digest("hex");
-    }
+    },
 
     root.cloakIP = function (ip) {
         if (ip.match(/\d+\.\d+(\.\d+)?(\.\d+)?/)) {
             return cloakIPv4(ip);
-        } else if (ip.match(/([0-9a-f]{1,4}\:){1,7}[0-9a-f]{1,4}/)) {
+        } else if (ip.match(/([0-9a-f]{1,4}:){1,7}[0-9a-f]{1,4}/)) {
             return cloakIPv6(ip);
         } else {
             return ip;
@@ -321,5 +284,5 @@
             while (parts.length < 4) parts.push("*");
             return parts.join(":");
         }
-    }
+    };
 })();

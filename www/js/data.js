@@ -1,4 +1,5 @@
 var CL_VERSION = 3.0;
+var GS_VERSION = 1.7; // Google Drive Userscript
 
 var CLIENT = {
     rank: -1,
@@ -75,6 +76,7 @@ CyTube.ui = {
 CyTube.featureFlag = {
     efficientEmotes: true
 };
+CyTube._internal_do_not_use_or_you_will_be_banned = {};
 
 function getOpt(k) {
     var v = NO_STORAGE ? readCookie(k) : localStorage.getItem(k);
@@ -233,5 +235,3 @@ function eraseCookie(name) {
 
 /* to be implemented in callbacks.js */
 function setupCallbacks() { }
-
-window.enableCyTubeGoogleDriveUserscriptDebug = getOrDefault("cytube_drive_debug", false);

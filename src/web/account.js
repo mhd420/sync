@@ -10,24 +10,47 @@ var Logger = require("../logger");
 var db = require("../database");
 var $util = require("../utilities");
 var Config = require("../config");
-var Server = require("../server");
 var session = require("../session");
 var csrf = require("./csrf");
 const url = require("url");
+import crypto from 'crypto';
 
-const LOGGER = require('@calzoneman/jsli')('database/accounts');
+const LOGGER = require('@calzoneman/jsli')('web/accounts');
 
 let globalMessageBus;
+let emailConfig;
+let emailController;
 
 /**
  * Handles a GET request for /account/edit
  */
 function handleAccountEditPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
+    sendPug(res, "account-edit", {});
+}
+
+function verifyReferrer(req, expected) {
+    const referrer = req.header('referer');
+
+    if (!referrer) {
+        return true;
     }
 
-    sendPug(res, "account-edit", {});
+    try {
+        const parsed = url.parse(referrer);
+
+        if (parsed.pathname !== expected) {
+            LOGGER.warn(
+                'Possible attempted forgery: %s POSTed to %s',
+                referrer,
+                expected
+            );
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        return false;
+    }
 }
 
 /**
@@ -35,6 +58,11 @@ function handleAccountEditPage(req, res) {
  */
 function handleAccountEdit(req, res) {
     csrf.verify(req);
+
+    if (!verifyReferrer(req, '/account/edit')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
 
     var action = req.body.action;
     switch(action) {
@@ -45,7 +73,7 @@ function handleAccountEdit(req, res) {
             handleChangeEmail(req, res);
             break;
         default:
-            res.send(400);
+            res.sendStatus(400);
             break;
     }
 }
@@ -82,7 +110,7 @@ async function handleChangePassword(req, res) {
 
     newpassword = newpassword.substring(0, 100);
 
-    db.users.verifyLogin(name, oldpassword, function (err, user) {
+    db.users.verifyLogin(name, oldpassword, function (err, _user) {
         if (err) {
             sendPug(res, "account-edit", {
                 errorMessage: err
@@ -90,7 +118,7 @@ async function handleChangePassword(req, res) {
             return;
         }
 
-        db.users.setPassword(name, newpassword, function (err, dbres) {
+        db.users.setPassword(name, newpassword, function (err, _dbres) {
             if (err) {
                 sendPug(res, "account-edit", {
                     errorMessage: err
@@ -149,7 +177,7 @@ function handleChangeEmail(req, res) {
         return;
     }
 
-    db.users.verifyLogin(name, password, function (err, user) {
+    db.users.verifyLogin(name, password, function (err, _user) {
         if (err) {
             sendPug(res, "account-edit", {
                 errorMessage: err
@@ -157,7 +185,7 @@ function handleChangeEmail(req, res) {
             return;
         }
 
-        db.users.setEmail(name, email, function (err, dbres) {
+        db.users.setEmail(name, email, function (err, _dbres) {
             if (err) {
                 sendPug(res, "account-edit", {
                     errorMessage: err
@@ -178,10 +206,6 @@ function handleChangeEmail(req, res) {
  * Handles a GET request for /account/channels
  */
 async function handleAccountChannelPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     const user = await webserver.authorize(req);
     // TODO: error message
     if (!user) {
@@ -202,6 +226,11 @@ async function handleAccountChannelPage(req, res) {
  */
 function handleAccountChannel(req, res) {
     csrf.verify(req);
+
+    if (!verifyReferrer(req, '/account/channels')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
 
     var action = req.body.action;
     switch(action) {
@@ -263,7 +292,7 @@ async function handleNewChannel(req, res) {
             return;
         }
 
-        db.channels.register(name, user.name, function (err, channel) {
+        db.channels.register(name, user.name, function (err, _channel) {
             if (!err) {
                 Logger.eventlog.log("[channel] " + user.name + "@" +
                                     req.realIP +
@@ -349,10 +378,6 @@ async function handleDeleteChannel(req, res) {
  * Handles a GET request for /account/profile
  */
 async function handleAccountProfilePage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     const user = await webserver.authorize(req);
     // TODO: error message
     if (!user) {
@@ -404,6 +429,11 @@ function validateProfileImage(image, callback) {
  */
 async function handleAccountProfile(req, res) {
     csrf.verify(req);
+
+    if (!verifyReferrer(req, '/account/profile')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
 
     const user = await webserver.authorize(req);
     // TODO: error message
@@ -462,10 +492,6 @@ async function handleAccountProfile(req, res) {
  * Handles a GET request for /account/passwordreset
  */
 function handlePasswordResetPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     sendPug(res, "account-passwordreset", {
         reset: false,
         resetEmail: "",
@@ -478,6 +504,11 @@ function handlePasswordResetPage(req, res) {
  */
 function handlePasswordReset(req, res) {
     csrf.verify(req);
+
+    if (!verifyReferrer(req, '/account/passwordreset')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
 
     var name = req.body.name,
         email = req.body.email;
@@ -506,88 +537,92 @@ function handlePasswordReset(req, res) {
             return;
         }
 
-        if (actualEmail !== email.trim()) {
+        if (actualEmail === '') {
+            sendPug(res, "account-passwordreset", {
+                reset: false,
+                resetEmail: "",
+                resetErr: `Username ${name} cannot be recovered because it ` +
+                          "doesn't have an email address associated with it."
+            });
+            return;
+        } else if (actualEmail.toLowerCase() !== email.trim().toLowerCase()) {
             sendPug(res, "account-passwordreset", {
                 reset: false,
                 resetEmail: "",
                 resetErr: "Provided email does not match the email address on record for " + name
             });
             return;
-        } else if (actualEmail === "") {
-            sendPug(res, "account-passwordreset", {
-                reset: false,
-                resetEmail: "",
-                resetErr: name + " doesn't have an email address on record.  Please contact an " +
-                          "administrator to manually reset your password."
-            });
-            return;
         }
 
-        var hash = $util.sha1($util.randomSalt(64));
-        // 24-hour expiration
-        var expire = Date.now() + 86400000;
-        var ip = req.realIP;
-
-        db.addPasswordReset({
-            ip: ip,
-            name: name,
-            email: email,
-            hash: hash,
-            expire: expire
-        }, function (err, dbres) {
+        crypto.randomBytes(20, (err, bytes) => {
             if (err) {
-                sendPug(res, "account-passwordreset", {
-                    reset: false,
-                    resetEmail: "",
-                    resetErr: err
-                });
-                return;
-            }
-
-            Logger.eventlog.log("[account] " + ip + " requested password recovery for " +
-                                name + " <" + email + ">");
-
-            if (!Config.get("mail.enabled")) {
+                LOGGER.error(
+                    'Could not generate random bytes for password reset: %s',
+                    err.stack
+                );
                 sendPug(res, "account-passwordreset", {
                     reset: false,
                     resetEmail: email,
-                    resetErr: "This server does not have mail support enabled.  Please " +
-                              "contact an administrator for assistance."
+                    resetErr: "Internal error when generating password reset"
                 });
                 return;
             }
 
-            var msg = "A password reset request was issued for your " +
-                      "account `"+ name + "` on " + Config.get("http.domain") +
-                      ".  This request is valid for 24 hours.  If you did "+
-                      "not initiate this, there is no need to take action."+
-                      "  To reset your password, copy and paste the " +
-                      "following link into your browser: " +
-                      Config.get("http.domain") + "/account/passwordrecover/"+hash;
+            var hash = bytes.toString('hex');
+            // 24-hour expiration
+            var expire = Date.now() + 86400000;
+            var ip = req.realIP;
 
-            var mail = {
-                from: Config.get("mail.from-name") + " <" + Config.get("mail.from-address") + ">",
-                to: email,
-                subject: "Password reset request",
-                text: msg
-            };
-
-            Config.get("mail.nodemailer").sendMail(mail, function (err, response) {
+            db.addPasswordReset({
+                ip: ip,
+                name: name,
+                email: actualEmail,
+                hash: hash,
+                expire: expire
+            }, function (err, _dbres) {
                 if (err) {
-                    LOGGER.error("mail fail: " + err);
+                    sendPug(res, "account-passwordreset", {
+                        reset: false,
+                        resetEmail: "",
+                        resetErr: err
+                    });
+                    return;
+                }
+
+                Logger.eventlog.log("[account] " + ip + " requested password recovery for " +
+                                    name + " <" + email + ">");
+
+                if (!emailConfig.getPasswordReset().isEnabled()) {
+                    sendPug(res, "account-passwordreset", {
+                        reset: false,
+                        resetEmail: email,
+                        resetErr: "This server does not have mail support enabled.  Please " +
+                                  "contact an administrator for assistance."
+                    });
+                    return;
+                }
+
+                const baseUrl = `${req.realProtocol}://${req.header("host")}`;
+
+                emailController.sendPasswordReset({
+                    username: name,
+                    address: email,
+                    url: `${baseUrl}/account/passwordrecover/${hash}`
+                }).then(_result => {
+                    sendPug(res, "account-passwordreset", {
+                        reset: true,
+                        resetEmail: email,
+                        resetErr: false
+                    });
+                }).catch(error => {
+                    LOGGER.error("Sending password reset email failed: %s", error);
                     sendPug(res, "account-passwordreset", {
                         reset: false,
                         resetEmail: email,
                         resetErr: "Sending reset email failed.  Please contact an " +
                                   "administrator for assistance."
                     });
-                } else {
-                    sendPug(res, "account-passwordreset", {
-                        reset: true,
-                        resetEmail: email,
-                        resetErr: false
-                    });
-                }
+                });
             });
         });
     });
@@ -655,8 +690,10 @@ module.exports = {
     /**
      * Initialize the module
      */
-    init: function (app, _globalMessageBus) {
+    init: function (app, _globalMessageBus, _emailConfig, _emailController) {
         globalMessageBus = _globalMessageBus;
+        emailConfig = _emailConfig;
+        emailController = _emailController;
 
         app.get("/account/edit", handleAccountEditPage);
         app.post("/account/edit", handleAccountEdit);

@@ -1,9 +1,5 @@
-var mysql = require("mysql");
-var bcrypt = require("bcrypt");
 var Config = require("./config");
 var tables = require("./database/tables");
-var net = require("net");
-var util = require("./utilities");
 import * as Metrics from './metrics/metrics';
 import knex from 'knex';
 import { GlobalBanDB } from './db/globalban';
@@ -18,6 +14,14 @@ const queryCount = new Counter({
     name: 'cytube_db_queries_total',
     help: 'DB query count'
 });
+const queryErrorCount = new Counter({
+    name: 'cytube_db_query_errors_total',
+    help: 'DB query error count'
+});
+
+setInterval(() => {
+    queryLatency.reset();
+}, 5 * 60 * 1000).unref();
 
 let db = null;
 let globalBanDB = null;
@@ -51,15 +55,20 @@ class Database {
     runTransaction(fn) {
         const timer = Metrics.startTimer('db:queryTime');
         const end = queryLatency.startTimer();
-        return this.knex.transaction(fn).finally(() => {
+        return this.knex.transaction(fn).catch(error => {
+            queryErrorCount.inc(1);
+            throw error;
+        }).finally(() => {
             end();
             Metrics.stopTimer(timer);
-            queryCount.inc(1, new Date());
+            queryCount.inc(1);
         });
     }
 }
 
 module.exports.Database = Database;
+module.exports.users = require("./database/accounts");
+module.exports.channels = require("./database/channels");
 
 module.exports.init = function (newDB) {
     if (newDB) {
@@ -74,9 +83,6 @@ module.exports.init = function (newDB) {
             }).then(() => {
                 process.nextTick(legacySetup);
             });
-
-    module.exports.users = require("./database/accounts");
-    module.exports.channels = require("./database/channels");
 };
 
 module.exports.getDB = function getDB() {
@@ -117,7 +123,7 @@ module.exports.query = function (query, sub, callback) {
     }
 
     if (process.env.SHOW_SQL) {
-        console.log(query);
+        LOGGER.debug('%s', query);
     }
 
     const end = queryLatency.startTimer();
@@ -125,12 +131,35 @@ module.exports.query = function (query, sub, callback) {
         .then(res => {
             process.nextTick(callback, null, res[0]);
         }).catch(error => {
-            LOGGER.error('Legacy DB query failed.  Query: %s, Substitutions: %j, Error: %s', query, sub, error);
+            queryErrorCount.inc(1);
+
+            if (!sub) {
+                sub = [];
+            }
+
+            let subs = JSON.stringify(sub);
+            if (subs.length > 100) {
+                subs = subs.substring(0, 100) + '...';
+            }
+
+            // Attempt to strip off the beginning of the message which
+            // contains the entire substituted SQL query (followed by an
+            // error code)
+            // Thanks MySQL/MariaDB...
+            error.message = error.message.replace(/^.* - ER/, 'ER');
+
+            LOGGER.error(
+                'Legacy DB query failed.  Query: %s, Substitutions: %s, ' +
+                'Error: %s',
+                query,
+                subs,
+                error
+            );
             process.nextTick(callback, 'Database failure', null);
         }).finally(() => {
             end();
             Metrics.stopTimer(timer);
-            queryCount.inc(1, new Date());
+            queryCount.inc(1);
         });
 };
 

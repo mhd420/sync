@@ -46,10 +46,11 @@ const DEFAULT_PERMISSIONS = {
     exceedmaxdurationperuser: 2 // Exceed maximum total playlist length per user
 };
 
-function PermissionsModule(channel) {
+function PermissionsModule(_channel) {
     ChannelModule.apply(this, arguments);
     this.permissions = {};
     this.openPlaylist = false;
+    this.supportsDirtyCheck = true;
 }
 
 PermissionsModule.prototype = Object.create(ChannelModule.prototype);
@@ -70,6 +71,8 @@ PermissionsModule.prototype.load = function (data) {
     } else if ("playlistLock" in data) {
         this.openPlaylist = !data.playlistLock;
     }
+
+    this.dirty = false;
 };
 
 PermissionsModule.prototype.save = function (data) {
@@ -124,6 +127,7 @@ PermissionsModule.prototype.handleTogglePlaylistLock = function (user) {
         return;
     }
 
+    this.dirty = true;
     this.openPlaylist = !this.openPlaylist;
     if (this.openPlaylist) {
         this.channel.logger.log("[playlist] " + user.getName() + " unlocked the playlist");
@@ -144,7 +148,7 @@ PermissionsModule.prototype.handleSetPermissions = function (user, perms) {
         return;
     }
 
-    for (var key in perms) {
+    for (const key in perms) {
         if (typeof perms[key] !== "number") {
             perms[key] = parseFloat(perms[key]);
             if (isNaN(perms[key])) {
@@ -153,7 +157,7 @@ PermissionsModule.prototype.handleSetPermissions = function (user, perms) {
         }
     }
 
-    for (var key in perms) {
+    for (const key in perms) {
         if (key in this.permissions) {
             this.permissions[key] = perms[key];
         }
@@ -165,6 +169,7 @@ PermissionsModule.prototype.handleSetPermissions = function (user, perms) {
         }
     }
 
+    this.dirty = true;
     this.channel.logger.log("[mod] " + user.getName() + " updated permissions");
     this.sendPermissions(this.channel.users);
 };
@@ -210,7 +215,7 @@ PermissionsModule.prototype.canMoveVideo = function (account) {
 };
 
 PermissionsModule.prototype.canDeleteVideo = function (account) {
-    return this.hasPermission(account, "playlistdelete")
+    return this.hasPermission(account, "playlistdelete");
 };
 
 PermissionsModule.prototype.canSkipVideo = function (account) {

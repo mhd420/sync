@@ -21,7 +21,19 @@ import http from 'http';
 
 const LOGGER = require('@calzoneman/jsli')('ioserver');
 
-// WIP, not in use yet
+const rateLimitExceeded = new Counter({
+    name: 'cytube_socketio_rate_limited_total',
+    help: 'Number of socket.io connections rejected due to exceeding rate limit'
+});
+const connLimitExceeded = new Counter({
+    name: 'cytube_socketio_conn_limited_total',
+    help: 'Number of socket.io connections rejected due to exceeding conn limit'
+});
+const authFailureCount = new Counter({
+    name: 'cytube_socketio_auth_error_total',
+    help: 'Number of failed authentications from session middleware'
+});
+
 class IOServer {
     constructor(options = {
         proxyTrustFn: proxyaddr.compile('127.0.0.1')
@@ -38,10 +50,32 @@ class IOServer {
     // If the resulting address is a known Tor exit, flag it as such
     ipProxyMiddleware(socket, next) {
         if (!socket.context) socket.context = {};
-        socket.context.ipAddress = proxyaddr(socket.client.request, this.proxyTrustFn);
+
+        try {
+            socket.handshake.connection = {
+                remoteAddress: socket.handshake.address
+            };
+
+            socket.context.ipAddress = proxyaddr(
+                socket.handshake,
+                this.proxyTrustFn
+            );
+
+            if (!socket.context.ipAddress) {
+                throw new Error(
+                    `Assertion failed: unexpected IP ${socket.context.ipAddress}`
+                );
+            }
+        } catch (error) {
+            LOGGER.warn('Rejecting socket - proxyaddr failed: %s', error);
+            next(new Error('Could not determine IP address'));
+            return;
+        }
+
         if (isTorExit(socket.context.ipAddress)) {
             socket.context.torConnection = true;
         }
+
         next();
     }
 
@@ -65,6 +99,7 @@ class IOServer {
 
         const bucket = this.ipThrottle.get(socket.context.ipAddress);
         if (bucket.throttle()) {
+            rateLimitExceeded.inc(1);
             LOGGER.info('Rejecting %s - exceeded connection rate limit',
                     socket.context.ipAddress);
             next(new Error('Rate limit exceeded'));
@@ -74,6 +109,8 @@ class IOServer {
         next();
     }
 
+    /*
+        TODO: see https://github.com/calzoneman/sync/issues/724
     ipConnectionLimitMiddleware(socket, next) {
         const ip = socket.context.ipAddress;
         const count = this.ipCount.get(ip) || 0;
@@ -84,16 +121,49 @@ class IOServer {
         }
 
         this.ipCount.set(ip, count + 1);
+        console.log(ip, this.ipCount.get(ip));
         socket.once('disconnect', () => {
+            console.log('Disconnect event has fired for', socket.id);
             this.ipCount.set(ip, this.ipCount.get(ip) - 1);
         });
 
         next();
     }
+    */
+
+    checkIPLimit(socket) {
+        const ip = socket.context.ipAddress;
+        const count = this.ipCount.get(ip) || 0;
+        if (count >= Config.get('io.ip-connection-limit')) {
+            connLimitExceeded.inc(1);
+            LOGGER.info(
+                'Rejecting %s - exceeded connection count limit',
+                ip
+            );
+            socket.emit('kick', {
+                reason: 'Too many connections from your IP address'
+            });
+            socket.disconnect(true);
+            return false;
+        }
+
+        this.ipCount.set(ip, count + 1);
+        socket.once('disconnect', () => {
+            const newCount = (this.ipCount.get(ip) || 1) - 1;
+
+            if (newCount === 0) {
+                this.ipCount.delete(ip);
+            } else {
+                this.ipCount.set(ip, newCount);
+            }
+        });
+
+        return true;
+    }
 
     // Parse cookies
     cookieParsingMiddleware(socket, next) {
-        const req = socket.request;
+        const req = socket.handshake;
         if (req.headers.cookie) {
             cookieParser(req, null, () => next());
         } else {
@@ -106,7 +176,7 @@ class IOServer {
     // Determine session age from ip-session cookie
     // (Used for restricting chat)
     ipSessionCookieMiddleware(socket, next) {
-        const cookie = socket.request.signedCookies['ip-session'];
+        const cookie = socket.handshake.signedCookies['ip-session'];
         if (!cookie) {
             socket.context.ipSessionFirstSeen = new Date();
             next();
@@ -127,11 +197,12 @@ class IOServer {
         socket.context.aliases = [];
 
         const promises = [];
-        const auth = socket.request.signedCookies.auth;
+        const auth = socket.handshake.signedCookies.auth;
         if (auth) {
             promises.push(verifySession(auth).then(user => {
                 socket.context.user = Object.assign({}, user);
-            }).catch(error => {
+            }).catch(_error => {
+                authFailureCount.inc(1);
                 LOGGER.warn('Unable to verify session for %s - ignoring auth',
                         socket.context.ipAddress);
             }));
@@ -139,7 +210,7 @@ class IOServer {
 
         promises.push(getAliases(socket.context.ipAddress).then(aliases => {
             socket.context.aliases = aliases;
-        }).catch(error => {
+        }).catch(_error => {
             LOGGER.warn('Unable to load aliases for %s',
                     socket.context.ipAddress);
         }));
@@ -147,12 +218,13 @@ class IOServer {
         Promise.all(promises).then(() => next());
     }
 
-    metricsEmittingMiddleware(socket, next) {
-        emitMetrics(socket);
-        next();
-    }
-
     handleConnection(socket) {
+        if (!this.checkIPLimit(socket)) {
+            return;
+        }
+
+        emitMetrics(socket);
+
         LOGGER.info('Accepted socket from %s', socket.context.ipAddress);
         counters.add('socket.io:accept', 1);
         socket.once('disconnect', () => counters.add('socket.io:disconnect', 1));
@@ -176,11 +248,10 @@ class IOServer {
         io.use(this.ipProxyMiddleware.bind(this));
         io.use(this.ipBanMiddleware.bind(this));
         io.use(this.ipThrottleMiddleware.bind(this));
-        io.use(this.ipConnectionLimitMiddleware.bind(this));
+        //io.use(this.ipConnectionLimitMiddleware.bind(this));
         io.use(this.cookieParsingMiddleware.bind(this));
         io.use(this.ipSessionCookieMiddleware.bind(this));
         io.use(this.authUserMiddleware.bind(this));
-        io.use(this.metricsEmittingMiddleware.bind(this));
         io.on('connection', this.handleConnection.bind(this));
     }
 
@@ -209,12 +280,12 @@ function patchSocketMetrics() {
 
     Socket.prototype.onevent = function patchedOnevent() {
         onevent.apply(this, arguments);
-        incomingEventCount.inc(1, new Date());
+        incomingEventCount.inc(1);
     };
 
     Socket.prototype.packet = function patchedPacket() {
         packet.apply(this, arguments);
-        outgoingPacketCount.inc(1, new Date());
+        outgoingPacketCount.inc(1);
     };
 }
 
@@ -275,14 +346,15 @@ const promSocketDisconnect = new Counter({
 });
 function emitMetrics(sock) {
     try {
+        let closed = false;
         let transportName = sock.client.conn.transport.name;
         promSocketCount.inc({ transport: transportName });
-        promSocketAccept.inc(1, new Date());
+        promSocketAccept.inc(1);
 
         sock.client.conn.on('upgrade', newTransport => {
             try {
                 // Sanity check
-                if (newTransport !== transportName) {
+                if (!closed && newTransport.name !== transportName) {
                     promSocketCount.dec({ transport: transportName });
                     transportName = newTransport.name;
                     promSocketCount.inc({ transport: transportName });
@@ -295,8 +367,9 @@ function emitMetrics(sock) {
 
         sock.once('disconnect', () => {
             try {
+                closed = true;
                 promSocketCount.dec({ transport: transportName });
-                promSocketDisconnect.inc(1, new Date());
+                promSocketDisconnect.inc(1);
             } catch (error) {
                 LOGGER.error('Error emitting disconnect metrics for socket (ip=%s): %s',
                         sock.context.ipAddress, error.stack);

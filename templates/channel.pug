@@ -12,9 +12,8 @@ html(lang="en")
         include nav
         +navheader()
         #nav-collapsible.collapse.navbar-collapse
-          - var cname = `/${channelPath}/${channelName}`
           ul.nav.navbar-nav
-            +navdefaultlinks(cname)
+            +navdefaultlinks()
             li: a(href="javascript:void(0)", onclick="javascript:showUserOptions()") Options
             li: a#showchansettings(href="javascript:void(0)", onclick="javascript:showChannelSettings()") Channel Settings
             li.dropdown
@@ -24,7 +23,7 @@ html(lang="en")
                 li: a(href="#" onclick="javascript:chatOnly()") Chat Only
                 li: a(href="#" onclick="javascript:removeVideo(event)") Remove Video
             +navsuperadmin(true)
-          +navloginlogout(cname)
+          +navloginlogout()
       section#mainpage
         .container
           #motdrow.row
@@ -251,9 +250,12 @@ html(lang="en")
     script(src="/js/callbacks.js")
     script(defer, src="https://www.youtube.com/iframe_api")
     script(defer, src="https://api.dmcdn.net/all.js")
+    script(defer, src="https://player.vimeo.com/api/player.js")
     script(defer, src="/js/sc.js")
-    script(defer, src="/js/froogaloop.min.js")
     script(defer, src="/js/video.js")
     script(defer, src="/js/videojs-contrib-hls.min.js")
     script(defer, src="/js/videojs-resolution-switcher.js")
+    script(defer, src="/js/playerjs-0.0.12.js")
+    script(defer, src="/js/dash.all.min.js")
+    script(defer, src="/js/videojs-dash.js")
     script(defer, src="https://player.twitch.tv/js/embed/v1.js")

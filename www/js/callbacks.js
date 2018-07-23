@@ -37,7 +37,7 @@ Callbacks = {
 
     // Socket.IO error callback
     error: function (msg) {
-        window.SOCKET_ERROR_REASON = reason;
+        window.SOCKET_ERROR_REASON = msg;
         $("<div/>")
             .addClass("server-msg-disconnect")
             .text("Unable to connect: " + msg)
@@ -487,32 +487,13 @@ Callbacks = {
     userlist: function(data) {
         $(".userlist_item").remove();
         for(var i = 0; i < data.length; i++) {
-            Callbacks.addUser(data[i]);
+            CyTube._internal_do_not_use_or_you_will_be_banned.addUserToList(data[i], false);
         }
+        sortUserlist();
     },
 
     addUser: function(data) {
-        var user = findUserlistItem(data.name);
-        // Remove previous instance of user, if there was one
-        if(user !== null)
-            user.remove();
-        var div = $("<div/>")
-            .addClass("userlist_item");
-        var icon = $("<span/>").appendTo(div);
-        var nametag = $("<span/>").text(data.name).appendTo(div);
-        div.data("name", data.name);
-        div.data("rank", data.rank);
-        div.data("leader", Boolean(data.leader));
-        div.data("profile", data.profile);
-        div.data("meta", data.meta);
-        if (data.meta.muted || data.meta.smuted) {
-            div.data("icon", "glyphicon-volume-off");
-        } else {
-            div.data("icon", false);
-        }
-        formatUserlistItem(div);
-        addUserDropdown(div, data);
-        div.appendTo($("#userlist"));
+        CyTube._internal_do_not_use_or_you_will_be_banned.addUserToList(data, true);
         sortUserlist();
     },
 
@@ -791,9 +772,9 @@ Callbacks = {
         function loadNext() {
             if (!PLAYER || data.type !== PLAYER.mediaType) {
                 loadMediaPlayer(data);
+            } else {
+                handleMediaUpdate(data);
             }
-
-            handleMediaUpdate(data);
         }
 
         // Persist the user's volume preference from the the player, if possible
@@ -939,6 +920,7 @@ Callbacks = {
 
         }
         $("<span/>").addClass("label label-default pull-right").data('timestamp',data.timestamp).appendTo(poll)
+            .attr('title', 'Poll opened by ' + data.initiator).data('initiator',data.initiator)
             .text(new Date(data.timestamp).toTimeString().split(" ")[0]);
 
         poll.find(".btn").attr("disabled", !hasPermission("pollvote"));

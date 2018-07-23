@@ -3,8 +3,8 @@ var fs = require("fs");
 var webserver = require("./webserver");
 var sendPug = require("./pug").sendPug;
 var Logger = require("../logger");
-var db = require("../database");
-var Config = require("../config");
+
+let ioConfig;
 
 function checkAdmin(cb) {
     return async function (req, res) {
@@ -27,17 +27,18 @@ function checkAdmin(cb) {
 /**
  * Handles a request for the ACP
  */
-function handleAcp(req, res, user) {
-    var sio;
-    if (req.secure || req.header("x-forwarded-proto") === "https") {
-        sio = Config.get("https.domain") + ":" + Config.get("https.default-port");
-    } else {
-        sio = Config.get("io.domain") + ":" + Config.get("io.default-port");
+function handleAcp(req, res, _user) {
+    const ioServers = ioConfig.getSocketEndpoints();
+    const chosenServer = ioServers[0];
+
+    if (!chosenServer) {
+        res.status(500).text("No suitable socket.io address for ACP");
+        return;
     }
-    sio += "/socket.io/socket.io.js";
 
     sendPug(res, "acp", {
-        sioSource: sio
+        ioServers: JSON.stringify(ioServers),
+        sioSource: `${chosenServer.url}/socket.io/socket.io.js`
     });
 }
 
@@ -104,7 +105,9 @@ function handleReadChanlog(req, res) {
 }
 
 module.exports = {
-    init: function (app) {
+    init: function (app, _ioConfig) {
+        ioConfig = _ioConfig;
+
         app.get("/acp", checkAdmin(handleAcp));
         app.get("/acp/syslog", checkAdmin(handleReadSyslog));
         app.get("/acp/errlog", checkAdmin(handleReadErrlog));

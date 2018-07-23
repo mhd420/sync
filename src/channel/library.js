@@ -4,6 +4,7 @@ var util = require("../utilities");
 var InfoGetter = require("../get-info");
 var db = require("../database");
 var Media = require("../media");
+const LOGGER = require('@calzoneman/jsli')('channel/library');
 
 const TYPE_UNCACHE = {
     id: "string"
@@ -14,7 +15,7 @@ const TYPE_SEARCH_MEDIA = {
     query: "string"
 };
 
-function LibraryModule(channel) {
+function LibraryModule(_channel) {
     ChannelModule.apply(this, arguments);
 }
 
@@ -28,6 +29,19 @@ LibraryModule.prototype.onUserPostJoin = function (user) {
 LibraryModule.prototype.cacheMedia = function (media) {
     if (this.channel.is(Flags.C_REGISTERED) && !util.isLive(media.type)) {
         db.channels.addToLibrary(this.channel.name, media);
+    }
+};
+
+LibraryModule.prototype.cacheMediaList = function (list) {
+    if (this.channel.is(Flags.C_REGISTERED)) {
+        LOGGER.info(
+            'Saving %d items to library for %s',
+            list.length,
+            this.channel.name
+        );
+        db.channels.addListToLibrary(this.channel.name, list).catch(error => {
+            LOGGER.error('Failed to add list to library: %s', error.stack);
+        });
     }
 };
 
@@ -53,7 +67,7 @@ LibraryModule.prototype.handleUncache = function (user, data) {
 
     const chan = this.channel;
     chan.refCounter.ref("LibraryModule::handleUncache");
-    db.channels.deleteFromLibrary(chan.name, data.id, function (err, res) {
+    db.channels.deleteFromLibrary(chan.name, data.id, function (err, _res) {
         if (chan.dead) {
             return;
         } else if (err) {

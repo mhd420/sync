@@ -21,9 +21,12 @@ EmoteList.prototype = {
     },
 
     emoteExists: function (emote){
-        if(this.emotes.filter((item)=>{ return item.name === emote.name }).length){
-            return true;
+        for (let i = 0; i < this.emotes.length; i++) {
+            if (this.emotes[i].name === emote.name) {
+                return true;
+            }
         }
+
         return false;
     },
 
@@ -61,7 +64,6 @@ EmoteList.prototype = {
     },
 
     removeEmote: function (emote) {
-        var found = false;
         for (var i = 0; i < this.emotes.length; i++) {
             if (this.emotes[i].name === emote.name) {
                 this.emotes.splice(i, 1);
@@ -99,7 +101,7 @@ function validateEmote(f) {
     f.image = f.image.substring(0, 1000);
     f.image = XSS.sanitizeText(f.image);
 
-    var s = XSS.looseSanitizeText(f.name).replace(/([\\\.\?\+\*\$\^\|\(\)\[\]\{\}])/g, "\\$1");
+    var s = XSS.looseSanitizeText(f.name).replace(/([\\.?+*$^|()[\]{}])/g, "\\$1");
     s = "(^|\\s)" + s + "(?!\\S)";
     f.source = s;
 
@@ -114,21 +116,22 @@ function validateEmote(f) {
     }
 
     return f;
-};
+}
 
-function EmoteModule(channel) {
+function EmoteModule(_channel) {
     ChannelModule.apply(this, arguments);
     this.emotes = new EmoteList();
+    this.supportsDirtyCheck = true;
 }
 
 EmoteModule.prototype = Object.create(ChannelModule.prototype);
 
 EmoteModule.prototype.load = function (data) {
     if ("emotes" in data) {
-        for (var i = 0; i < data.emotes.length; i++) {
-            this.emotes.updateEmote(data.emotes[i]);
-        }
+        this.emotes = new EmoteList(data.emotes);
     }
+
+    this.dirty = false;
 };
 
 EmoteModule.prototype.save = function (data) {
@@ -152,7 +155,6 @@ EmoteModule.prototype.onUserPostJoin = function (user) {
 
 EmoteModule.prototype.sendEmotes = function (users) {
     var f = this.emotes.pack();
-    var chan = this.channel;
     users.forEach(function (u) {
         u.socket.emit("emoteList", f);
     });
@@ -198,6 +200,8 @@ EmoteModule.prototype.handleRenameEmote = function (user, data) {
     var success = this.emotes.renameEmote(Object.assign({}, f));
     if(!success){ return; }
 
+    this.dirty = true;
+
     var chan = this.channel;
     chan.broadcastAll("renameEmote", f);
     chan.logger.log(`[mod] ${user.getName()} renamed emote: ${f.old} -> ${f.name}`);
@@ -228,6 +232,9 @@ EmoteModule.prototype.handleUpdateEmote = function (user, data) {
     }
 
     this.emotes.updateEmote(f);
+
+    this.dirty = true;
+
     var chan = this.channel;
     chan.broadcastAll("updateEmote", f);
 
@@ -249,6 +256,9 @@ EmoteModule.prototype.handleImportEmotes = function (user, data) {
     this.emotes.importList(data.map(validateEmote).filter(function (f) {
         return f !== false;
     }));
+
+    this.dirty = true;
+
     this.sendEmotes(this.channel.users);
 };
 
@@ -266,6 +276,9 @@ EmoteModule.prototype.handleRemoveEmote = function (user, data) {
     }
 
     this.emotes.removeEmote(data);
+
+    this.dirty = true;
+
     this.channel.logger.log("[mod] " + user.getName() + " removed emote: " + data.name);
     this.channel.broadcastAll("removeEmote", data);
 };
@@ -284,6 +297,8 @@ EmoteModule.prototype.handleMoveEmote = function (user, data) {
     }
 
     this.emotes.moveEmote(data.from, data.to);
+
+    this.dirty = true;
 };
 
 module.exports = EmoteModule;

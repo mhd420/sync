@@ -6,10 +6,11 @@ var sio = require("socket.io");
 var db = require("../database");
 import * as ChannelStore from '../channel-storage/channelstore';
 import { ChannelStateSizeError } from '../errors';
-import Promise from 'bluebird';
 import { EventEmitter } from 'events';
 import { throttle } from '../util/throttle';
 import Logger from '../logger';
+// Not directly used, but needs to be in scope for async functions
+import Promise from 'bluebird';
 
 const LOGGER = require('@calzoneman/jsli')('channel');
 
@@ -46,6 +47,7 @@ class ReferenceCounter {
                 LOGGER.error("ReferenceCounter::unref() called by caller [" +
                         caller + "] but this caller had no active references! " +
                         `(channel: ${this.channelName})`);
+                return;
             }
         }
 
@@ -63,7 +65,7 @@ class ReferenceCounter {
                 for (var caller in this.references) {
                     this.refCount += this.references[caller];
                 }
-            } else if (this.channel.users.length > 0) {
+            } else if (this.channel.users && this.channel.users.length > 0) {
                 LOGGER.error("ReferenceCounter::refCount reached 0 but still had " +
                         this.channel.users.length + " active users" +
                         ` (channel: ${this.channelName})`);
@@ -79,8 +81,11 @@ function Channel(name) {
     this.name = name;
     this.uniqueName = name.toLowerCase();
     this.modules = {};
-    this.logger = new Logger.Logger(path.join(__dirname, "..", "..", "chanlogs",
-                                              this.uniqueName + ".log"));
+    this.logger = new Logger.Logger(
+        path.join(
+            __dirname, "..", "..", "chanlogs", this.uniqueName + ".log"
+        )
+    );
     this.users = [];
     this.refCounter = new ReferenceCounter(this);
     this.flags = 0;
@@ -155,7 +160,8 @@ Channel.prototype.initModules = function () {
         "./poll"          : "poll",
         "./kickban"       : "kickban",
         "./ranks"         : "rank",
-        "./accesscontrol" : "password"
+        "./accesscontrol" : "password",
+        "./anonymouscheck": "anoncheck"
     };
 
     var self = this;
@@ -239,37 +245,58 @@ Channel.prototype.loadState = function () {
     });
 };
 
-Channel.prototype.saveState = function () {
+Channel.prototype.saveState = async function () {
     if (!this.is(Flags.C_REGISTERED)) {
-        return Promise.resolve();
+        return;
     } else if (!this.is(Flags.C_READY)) {
-        return Promise.reject(new Error(`Attempted to save channel ${this.name} ` +
-                `but it wasn't finished loading yet!`));
+        throw new Error(
+            `Attempted to save channel ${this.name} ` +
+            `but it wasn't finished loading yet!`
+        );
     }
 
     if (this.is(Flags.C_ERROR)) {
-        return Promise.reject(new Error(`Channel is in error state`));
+        throw new Error(`Channel is in error state`);
     }
 
     this.logger.log("[init] Saving channel state to disk");
+
     const data = {};
     Object.keys(this.modules).forEach(m => {
-        this.modules[m].save(data);
+        if (
+            this.modules[m].dirty ||
+            !this.modules[m].supportsDirtyCheck
+        ) {
+            this.modules[m].save(data);
+        } else {
+            LOGGER.debug(
+                "Skipping save for %s[%s]: not dirty",
+                this.uniqueName,
+                m
+            );
+        }
     });
 
-    return ChannelStore.save(this.id, this.uniqueName, data)
-            .catch(ChannelStateSizeError, err => {
-        this.users.forEach(u => {
-            if (u.account.effectiveRank >= 2) {
-                u.socket.emit("warnLargeChandump", {
-                    limit: err.limit,
-                    actual: err.actual
-                });
-            }
+    try {
+        await ChannelStore.save(this.id, this.uniqueName, data);
+
+        Object.keys(this.modules).forEach(m => {
+            this.modules[m].dirty = false;
         });
+    } catch (error) {
+        if (error instanceof ChannelStateSizeError) {
+            this.users.forEach(u => {
+                if (u.account.effectiveRank >= 2) {
+                    u.socket.emit("warnLargeChandump", {
+                        limit: error.limit,
+                        actual: error.actual
+                    });
+                }
+            });
+        }
 
-        throw err;
-    });
+        throw error;
+    }
 };
 
 Channel.prototype.checkModules = function (fn, args, cb) {
@@ -293,6 +320,18 @@ Channel.prototype.checkModules = function (fn, args, cb) {
                 /* No more modules to check */
                 cb(null, ChannelModule.PASSTHROUGH);
                 self.refCounter.unref(refCaller);
+                return;
+            }
+
+            if (!self.modules) {
+                LOGGER.warn(
+                    'checkModules(%s): self.modules is undefined; dead=%s,' +
+                    ' current=%s, remaining=%s',
+                    fn,
+                    self.dead,
+                    m,
+                    keys
+                );
                 return;
             }
 
@@ -330,6 +369,14 @@ Channel.prototype.joinUser = function (user, data) {
 
         user.channel = self;
         user.waitFlag(Flags.U_LOGGED_IN, () => {
+            if (self.dead) {
+                LOGGER.warn(
+                    'Got U_LOGGED_IN for %s after channel already unloaded',
+                    user.getName()
+                );
+                return;
+            }
+
             if (user.is(Flags.U_REGISTERED)) {
                 db.channels.getRank(self.name, user.getName(), (error, rank) => {
                     if (!error) {
@@ -425,7 +472,7 @@ Channel.prototype.acceptUser = function (user) {
         self.sendUserMeta(self.users, user);
         // TODO: Drop legacy setAFK frame after a few months
         self.broadcastAll("setAFK", { name: user.getName(), afk: afk });
-    })
+    });
     user.on("effectiveRankChange", (newRank, oldRank) => {
         this.maybeResendUserlist(user, newRank, oldRank);
     });
@@ -519,7 +566,7 @@ Channel.prototype.sendUserMeta = function (users, user, minrank) {
     var self = this;
     var userdata = self.packUserData(user);
     users.filter(function (u) {
-        return typeof minrank !== "number" || u.account.effectiveRank > minrank
+        return typeof minrank !== "number" || u.account.effectiveRank > minrank;
     }).forEach(function (u) {
         if (u.account.globalRank >= 255)  {
             u.socket.emit("setUserMeta", {
@@ -661,7 +708,6 @@ Channel.prototype.handleReadLog = function (user) {
         return;
     }
 
-    var shouldMaskIP = user.account.globalRank < 255;
     this.readLog(function (err, data) {
         if (err) {
             user.socket.emit("readChanLog", {

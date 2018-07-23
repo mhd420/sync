@@ -30,8 +30,6 @@ function formatURL(data) {
             return "https://vimeo.com/" + data.id;
         case "dm":
             return "https://dailymotion.com/video/" + data.id;
-        case "vm":
-            return "https://vid.me/" + data.id;
         case "sc":
             return data.id;
         case "li":
@@ -943,6 +941,7 @@ function handleModPermissions() {
     $("#cs-voteskip_ratio").val(CHANNEL.opts.voteskip_ratio);
     $("#cs-allow_dupes").prop("checked", CHANNEL.opts.allow_dupes);
     $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
+    $("#cs-block_anonymous_users").prop("checked", CHANNEL.opts.block_anonymous_users);
     $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
     $("#cs-playlist_max_per_user").val(CHANNEL.opts.playlist_max_per_user || 0);
     $("#cs-playlist_max_duration_per_user").val(formatTime(CHANNEL.opts.playlist_max_duration_per_user));
@@ -1370,8 +1369,8 @@ function parseMediaLink(url) {
         };
     }
 
-    if ((m = url.match(/(?:docs|drive)\.google\.com\/file\/d\/([^\/]*)/)) ||
-        (m = url.match(/drive\.google\.com\/open\?id=([^&]*)/))) {
+    if ((m = url.match(/(?:docs|drive)\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)) ||
+        (m = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/))) {
         return {
             id: m[1],
             type: "gd"
@@ -1388,7 +1387,7 @@ function parseMediaLink(url) {
 
     if ((m = url.match(/(.*\.m3u8)/))) {
         return {
-            id: m[1],
+            id: url,
             type: "hl"
         };
     }
@@ -1452,7 +1451,9 @@ function parseMediaLink(url) {
             Callbacks.queueFail({
                 link: url,
                 msg: "The file you are attempting to queue does not match the supported " +
-                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a."
+                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a. " +
+                     "For more information about why other filetypes are not supported, " +
+                     "see https://git.io/va9g9"
             });
             // Lol I forgot about this hack
             throw new Error("ERROR_QUEUE_UNSUPPORTED_EXTENSION");
@@ -3228,6 +3229,13 @@ function startQueueSpinner(data) {
 }
 
 function stopQueueSpinner(data) {
+    // TODO: this is a temp hack, need to replace media ID check with
+    // a passthrough request ID (since media ID from API is not necessarily
+    // the same as the URL "ID" from the user)
+    if (data && data.type === "us") {
+        data = { id: data.title.match(/Ustream.tv - (.*)/)[1] };
+    }
+
     var shouldRemove = (data !== null &&
                         typeof data === 'object' &&
                         $("#queueprogress").data("queue-id") === data.id);
@@ -3247,11 +3255,15 @@ function maybePromptToUpgradeUserscript() {
         return;
     }
 
-    var currentVersion = [1, 3];
+    var currentVersion = GS_VERSION.toString(); // data.js
     var userscriptVersion = window.driveUserscriptVersion;
     if (!userscriptVersion) {
         userscriptVersion = '1.0';
     }
+
+    currentVersion = currentVersion.split('.').map(function (part) {
+        return parseInt(part, 10);
+    });
     userscriptVersion = userscriptVersion.split('.').map(function (part) {
         return parseInt(part, 10);
     });
@@ -3352,4 +3364,30 @@ CyTube.ui.changeVideoWidth = function uiChangeVideoWidth(direction) {
     leftPane.className = "col-md-" + chatWidth + " col-lg-" + chatWidth;
 
     handleVideoResize();
+};
+
+CyTube._internal_do_not_use_or_you_will_be_banned.addUserToList = function (data, removePrev) {
+    if (removePrev) {
+        var user = findUserlistItem(data.name);
+        // Remove previous instance of user, if there was one
+        if(user !== null)
+            user.remove();
+    }
+    var div = $("<div/>")
+        .addClass("userlist_item");
+    var icon = $("<span/>").appendTo(div);
+    var nametag = $("<span/>").text(data.name).appendTo(div);
+    div.data("name", data.name);
+    div.data("rank", data.rank);
+    div.data("leader", Boolean(data.leader));
+    div.data("profile", data.profile);
+    div.data("meta", data.meta);
+    if (data.meta.muted || data.meta.smuted) {
+        div.data("icon", "glyphicon-volume-off");
+    } else {
+        div.data("icon", false);
+    }
+    formatUserlistItem(div);
+    addUserDropdown(div, data);
+    div.appendTo($("#userlist"));
 };

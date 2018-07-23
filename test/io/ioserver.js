@@ -10,19 +10,13 @@ describe('IOServer', () => {
             context: {
                 ipAddress: '9.9.9.9'
             },
-            client: {
-                request: {
-                    connection: {
-                        remoteAddress: '127.0.0.1'
-                    },
-                    headers: {
-                        'x-forwarded-for': '1.2.3.4'
-                    }
+            handshake: {
+                address: '127.0.0.1',
+                headers: {
+                    'x-forwarded-for': '1.2.3.4'
                 }
             }
         };
-
-        socket.request = socket.client.request;
     });
 
     describe('#ipProxyMiddleware', () => {
@@ -35,7 +29,7 @@ describe('IOServer', () => {
         });
 
         it('does not proxy from a non-trusted address', done => {
-            socket.client.request.connection.remoteAddress = '5.6.7.8';
+            socket.handshake.address = '5.6.7.8';
             server.ipProxyMiddleware(socket, error => {
                 assert(!error);
                 assert.strictEqual(socket.context.ipAddress, '5.6.7.8');
@@ -75,69 +69,20 @@ describe('IOServer', () => {
         });
     });
 
-    describe('#ipConnectionLimitMiddleware', () => {
-        beforeEach(() => {
-            socket.once = (event, callback) => {
-                socket[`on_${event}`] = callback;
-            };
-        });
-
-        it('allows IPs before the limit', done => {
-            server.ipConnectionLimitMiddleware(socket, error => {
-                if (error) {
-                    throw error;
-                }
-
-                done();
-            });
-        });
-
-        it('rejects IPs at the limit', done => {
-            server.ipCount.set(socket.context.ipAddress,
-                    require('../../lib/config').get('io.ip-connection-limit'));
-            server.ipConnectionLimitMiddleware(socket, error => {
-                assert(error, 'Expected an error to be returned');
-                assert.strictEqual(error.message,
-                        'Too many connections from your IP address');
-                done();
-            });
-        });
-
-        it('manages the ipCount map correctly', done => {
-            const ip = socket.context.ipAddress;
-
-            assert(!server.ipCount.has(ip), 'Test precondition failed: ipCount.has(ip)');
-
-            server.ipConnectionLimitMiddleware(socket, error => {
-                if (error) {
-                    throw error;
-                }
-
-                assert.strictEqual(server.ipCount.get(ip), 1);
-
-                socket.on_disconnect();
-
-                assert.strictEqual(server.ipCount.get(ip), 0);
-
-                done();
-            });
-        });
-    });
-
     describe('#cookieParsingMiddleware', () => {
         it('parses cookies', done => {
-            socket.request.headers.cookie = 'flavor=chocolate%20chip';
+            socket.handshake.headers.cookie = 'flavor=chocolate%20chip';
 
             server.cookieParsingMiddleware(socket, () => {
-                assert.strictEqual(socket.request.cookies.flavor, 'chocolate chip');
+                assert.strictEqual(socket.handshake.cookies.flavor, 'chocolate chip');
                 done();
             });
         });
 
         it('defaults to empty objects if no cookies', done => {
             server.cookieParsingMiddleware(socket, () => {
-                assert.deepStrictEqual(socket.request.cookies, {});
-                assert.deepStrictEqual(socket.request.signedCookies, {});
+                assert.deepStrictEqual(socket.handshake.cookies, {});
+                assert.deepStrictEqual(socket.handshake.signedCookies, {});
                 done();
             });
         });

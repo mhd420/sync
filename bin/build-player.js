@@ -1,4 +1,6 @@
-var coffee = require('coffee-script');
+#!/usr/bin/env node
+
+var coffee = require('coffeescript');
 var fs = require('fs');
 var path = require('path');
 
@@ -8,6 +10,8 @@ var order = [
     'youtube.coffee',
     'dailymotion.coffee',
     'videojs.coffee',
+    'playerjs.coffee',
+    'streamable.coffee',
     'gdrive-player.coffee',
     'raw-file.coffee',
     'soundcloud.coffee',
@@ -26,7 +30,12 @@ var order = [
 
 var buffer = '';
 order.forEach(function (file) {
-    buffer += fs.readFileSync(path.join('player', file)) + '\n';
+    buffer += fs.readFileSync(
+        path.join(__dirname, '..', 'player', file)
+    ) + '\n';
 });
 
-fs.writeFileSync(path.join('www', 'js', 'player.js'), coffee.compile(buffer));
+fs.writeFileSync(
+    path.join(__dirname, '..', 'www', 'js', 'player.js'),
+    coffee.compile(buffer)
+);

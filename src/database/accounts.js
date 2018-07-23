@@ -45,7 +45,22 @@ module.exports = {
                 callback(err, true);
                 return;
             }
-            callback(null, rows.length > 0);
+
+            let matched = null;
+
+            rows.forEach(row => {
+                if (row.name === name) {
+                    matched = name;
+                } else if (matched === null) {
+                    matched = row.name;
+                }
+            });
+
+            callback(
+                null,
+                rows.length > 0,
+                matched
+            );
         });
     },
 
@@ -144,7 +159,7 @@ module.exports = {
                 return;
             }
 
-            module.exports.isUsernameTaken(name, function (err, taken) {
+            module.exports.isUsernameTaken(name, function (err, taken, matched) {
                 if (err) {
                     delete registrationLock[lname];
                     callback(err, null);
@@ -153,7 +168,22 @@ module.exports = {
 
                 if (taken) {
                     delete registrationLock[lname];
-                    callback("Username is already registered", null);
+
+                    if (matched === name) {
+                        callback(
+                            `Please choose a different username: "${name}" ` +
+                            `is already registered.`,
+                            null
+                        );
+                    } else {
+                        callback(
+                            `Please choose a different username: "${name}" ` +
+                            `too closely matches an existing name.  ` +
+                            `For example, "Joe" (lowercase 'o'), and ` +
+                            `"j0e" (zero) are not considered unique.`,
+                            null
+                        );
+                    }
                     return;
                 }
 
@@ -169,7 +199,7 @@ module.exports = {
                              " VALUES " +
                              "(?, ?, ?, ?, '', ?, ?, ?)",
                              [name, hash, 1, email, ip, Date.now(), module.exports.dedupeUsername(name)],
-                    function (err, res) {
+                    function (err, _res) {
                         delete registrationLock[lname];
                         if (err) {
                             callback(err, null);
@@ -262,7 +292,7 @@ module.exports = {
 
             db.query("UPDATE `users` SET password=? WHERE name=?",
                      [hash, name],
-            function (err, result) {
+            function (err, _result) {
                 callback(err, err ? null : true);
             });
         });
@@ -317,7 +347,7 @@ module.exports = {
         }
 
         db.query("UPDATE `users` SET global_rank=? WHERE name=?", [rank, name],
-        function (err, result) {
+        function (err, _result) {
             callback(err, err ? null : true);
         });
     },
@@ -397,7 +427,7 @@ module.exports = {
         }
 
         db.query("UPDATE `users` SET email=? WHERE name=?", [email, name],
-        function (err, result) {
+        function (err, _result) {
             callback(err, err ? null : true);
         });
     },
@@ -479,7 +509,7 @@ module.exports = {
         });
 
         db.query("UPDATE `users` SET profile=? WHERE name=?", [profilejson, name],
-        function (err, result) {
+        function (err, _result) {
             callback(err, err ? null : true);
         });
     },

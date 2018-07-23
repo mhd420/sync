@@ -156,14 +156,14 @@ User.prototype.handleLogin = function handleLogin(data) {
 };
 
 User.prototype.die = function () {
-    for (var key in this.socket._events) {
+    for (const key in this.socket._events) {
         delete this.socket._events[key];
     }
 
     delete this.socket.typecheckedOn;
     delete this.socket.typecheckedOnce;
 
-    for (var key in this.__evHandlers) {
+    for (const key in this.__evHandlers) {
         delete this.__evHandlers[key];
     }
 
@@ -242,6 +242,15 @@ User.prototype.setAFK = function (afk) {
         this.autoAFK();
     }
 
+    if (!this.inChannel()) {
+        /*
+         * In unusual circumstances, the above emit("clearVoteskipVote")
+         * can cause the "disconnect" event to be fired synchronously,
+         * which results in this user no longer being in the channel.
+         */
+        return;
+    }
+
     /* Number of AFK users changed, voteskip state changes */
     if (this.channel.modules.voteskip) {
         this.channel.modules.voteskip.update();
@@ -275,6 +284,11 @@ User.prototype.autoAFK = function () {
 User.prototype.kick = function (reason) {
     this.socket.emit("kick", { reason: reason });
     this.socket.disconnect();
+};
+
+User.prototype.isAnonymous = function(){
+    var self = this;
+    return !self.is(Flags.U_LOGGED_IN);
 };
 
 User.prototype.initAdminCallbacks = function () {
@@ -363,6 +377,19 @@ User.prototype.guestLogin = function (name) {
             success: false,
             error: "Invalid username.  Usernames must be 1-20 characters long and " +
                    "consist only of characters a-z, A-Z, 0-9, -, or _."
+        });
+        return;
+    }
+
+    if (name.match(Config.get("reserved-names.usernames"))) {
+        LOGGER.warn(
+            'Rejecting attempt by %s to use reserved username "%s"',
+            self.realip,
+            name
+        );
+        self.socket.emit("login", {
+            success: false,
+            error: "That username is reserved."
         });
         return;
     }

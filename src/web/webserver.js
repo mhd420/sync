@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import net from 'net';
 import { sendPug } from './pug';
 import Config from '../config';
 import bodyParser from 'body-parser';
@@ -13,6 +12,7 @@ import { CSRFError, HTTPError } from '../errors';
 import counters from '../counters';
 import { Summary, Counter } from 'prom-client';
 import session from '../session';
+import { verify as csrfVerify } from './csrf';
 const verifySessionAsync = require('bluebird').promisify(session.verifySession);
 
 const LOGGER = require('@calzoneman/jsli')('webserver');
@@ -57,60 +57,10 @@ function initPrometheus(app) {
         });
         next();
     });
-}
 
-/**
- * Redirects a request to HTTPS if the server supports it
- */
-function redirectHttps(req, res) {
-    if (req.realProtocol !== 'https' && Config.get('https.enabled') &&
-            Config.get('https.redirect')) {
-        var ssldomain = Config.get('https.full-address');
-        if (ssldomain.indexOf(req.hostname) < 0) {
-            return false;
-        }
-
-        res.redirect(ssldomain + req.path);
-        return true;
-    }
-    return false;
-}
-
-/**
- * Legacy socket.io configuration endpoint.  This is being migrated to
- * /socketconfig/<channel name>.json (see ./routes/socketconfig.js)
- */
-function handleLegacySocketConfig(req, res) {
-    if (/\.json$/.test(req.path)) {
-        res.json(Config.get('sioconfigjson'));
-        return;
-    }
-
-    res.type('application/javascript');
-
-    var sioconfig = Config.get('sioconfig');
-    var iourl;
-    var ip = req.realIP;
-    var ipv6 = false;
-
-    if (net.isIPv6(ip)) {
-        iourl = Config.get('io.ipv6-default');
-        ipv6 = true;
-    }
-
-    if (!iourl) {
-        iourl = Config.get('io.ipv4-default');
-    }
-
-    sioconfig += 'var IO_URL=\'' + iourl + '\';';
-    sioconfig += 'var IO_V6=' + ipv6 + ';';
-    res.send(sioconfig);
-}
-
-function handleUserAgreement(req, res) {
-    sendPug(res, 'tos', {
-        domain: Config.get('http.domain')
-    });
+    setInterval(() => {
+        latency.reset();
+    }, 5 * 60 * 1000).unref();
 }
 
 function initializeErrorHandlers(app) {
@@ -158,6 +108,28 @@ function initializeErrorHandlers(app) {
     });
 }
 
+function patchExpressToHandleAsync() {
+    const Layer = require('express/lib/router/layer');
+    // https://github.com/expressjs/express/blob/4.x/lib/router/layer.js#L86
+    Layer.prototype.handle_request = function handle(req, res, next) {
+        const fn = this.handle;
+
+        if (fn.length > 3) {
+            next();
+        }
+
+        try {
+            const result = fn(req, res, next);
+
+            if (result && result.catch) {
+                result.catch(error => next(error));
+            }
+        } catch (error) {
+            next(error);
+        }
+    };
+}
+
 module.exports = {
     /**
      * Initializes webserver callbacks
@@ -169,8 +141,13 @@ module.exports = {
         clusterClient,
         channelIndex,
         session,
-        globalMessageBus
+        globalMessageBus,
+        accountController,
+        channelDB,
+        emailConfig,
+        emailController
     ) {
+        patchExpressToHandleAsync();
         const chanPath = Config.get('channel-path');
 
         initPrometheus(app);
@@ -182,6 +159,9 @@ module.exports = {
         app.use(bodyParser.urlencoded({
             extended: false,
             limit: '1kb' // No POST data should ever exceed this size under normal usage
+        }));
+        app.use(bodyParser.json({
+            limit: '1kb'
         }));
         if (webConfig.getCookieSecret() === 'change-me') {
             LOGGER.warn('The configured cookie secret was left as the ' +
@@ -206,8 +186,10 @@ module.exports = {
                 fs.mkdirSync(cacheDir);
             }
             app.use((req, res, next) => {
+                res.minifyOptions = res.minifyOptions || {};
+
                 if (/\.user\.js/.test(req.url)) {
-                    res._no_minify = true;
+                    res.minifyOptions.minify = false;
                 }
 
                 next();
@@ -221,24 +203,33 @@ module.exports = {
         require('./routes/channel')(app, ioConfig, chanPath);
         require('./routes/index')(app, channelIndex, webConfig.getMaxIndexEntries());
         require('./routes/api')(app, channelIndex);
-        app.get('/sioconfig(.json)?', handleLegacySocketConfig);
         require('./routes/socketconfig')(app, clusterClient);
-        app.get('/useragreement', handleUserAgreement);
         require('./routes/contact')(app, webConfig);
         require('./auth').init(app);
-        require('./account').init(app, globalMessageBus);
-        require('./acp').init(app);
+        require('./account').init(app, globalMessageBus, emailConfig, emailController);
+        require('./acp').init(app, ioConfig);
         require('../google2vtt').attach(app);
         require('./routes/google_drive_userscript')(app);
-        require('./routes/ustream_bypass')(app);
+
+        if (process.env.UNFINISHED_FEATURE) {
+            const { AccountDataRoute } = require('./routes/account/data');
+            require('@calzoneman/express-babel-decorators').bind(
+                app,
+                new AccountDataRoute(
+                    accountController,
+                    channelDB,
+                    csrfVerify,
+                    verifySessionAsync
+                )
+            );
+        }
+
         app.use(serveStatic(path.join(__dirname, '..', '..', 'www'), {
             maxAge: webConfig.getCacheTTL()
         }));
 
         initializeErrorHandlers(app);
     },
-
-    redirectHttps: redirectHttps,
 
     authorize: async function authorize(req) {
         if (!req.signedCookies || !req.signedCookies.auth) {
