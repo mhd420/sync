@@ -56,6 +56,8 @@ function formatURL(data) {
             return "https://clips.twitch.tv/" + data.id;
         case "cm":
             return data.id;
+        case "mx":
+            return "https://mixer.com/" + data.meta.mixer.channelToken;
         default:
             return "#";
     }
@@ -1399,6 +1401,13 @@ function parseMediaLink(url) {
         };
     }
 
+    if ((m = url.match(/\bmixer\.com\/([\w-]+)/))) {
+        return {
+            id: m[1],
+            type: "mx"
+        };
+    }
+
     /*  Shorthand URIs  */
     // So we still trim DailyMotion URLs
     if((m = url.match(/^dm:([^\?&#_]+)/))) {
@@ -2138,7 +2147,7 @@ function modalAlert(options) {
     var footer = $("<div/>").addClass("modal-footer");
     var okButton = $("<button/>").addClass("btn btn-primary")
             .attr({ "data-dismiss": "modal"})
-            .text("OK")
+            .text(options.dismissText || "OK")
             .appendTo(footer);
     footer.appendTo(modal.find(".modal-content"));
     modal.appendTo(document.body);
@@ -2783,7 +2792,7 @@ function initPm(user) {
     return pm;
 }
 
-function checkScriptAccess(source, type, cb) {
+function checkScriptAccess(viewSource, type, cb) {
     var pref = JSPREF[CHANNEL.name.toLowerCase() + "_" + type];
     if (pref === "ALLOW") {
         return cb("ALLOW");
@@ -2791,7 +2800,7 @@ function checkScriptAccess(source, type, cb) {
         var div = $("#chanjs-allow-prompt");
         if (div.length > 0) {
             setTimeout(function () {
-                checkScriptAccess(source, type, cb);
+                checkScriptAccess(viewSource, type, cb);
             }, 500);
             return;
         }
@@ -2805,11 +2814,14 @@ function checkScriptAccess(source, type, cb) {
             .attr("id", "chanjs-allow-prompt")
             .attr("style", "text-align: center")
             .appendTo(div);
-        form.append("<span>This channel has special features that require your permission to run.</span><br>");
-        $("<a/>").attr("href", source)
-            .attr("target", "_blank")
-            .text(type === "embedded" ? "view embedded script" : source)
-            .appendTo(form);
+        if (type === "embedded") {
+            form.append("<span>This channel has special features that require your permission to run.</span><br>");
+        } else {
+            form.append("<span>This channel has special features that require your permission to run.  This script is hosted on a third-party website and is not endorsed by the owners of the website hosting this channel.</span><br>");
+        }
+
+        $(viewSource).appendTo(form);
+
         form.append("<div id='chanjs-allow-prompt-buttons'>" +
                         "<button id='chanjs-allow' class='btn btn-xs btn-danger'>Allow</button>" +
                         "<button id='chanjs-deny' class='btn btn-xs btn-danger'>Deny</button>" +
@@ -3234,6 +3246,8 @@ function stopQueueSpinner(data) {
     // the same as the URL "ID" from the user)
     if (data && data.type === "us") {
         data = { id: data.title.match(/Ustream.tv - (.*)/)[1] };
+    } else if (data && data.type === "mx") {
+        data = { id: data.meta.mixer.channelToken };
     }
 
     var shouldRemove = (data !== null &&

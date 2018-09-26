@@ -241,7 +241,11 @@ PlaylistModule.prototype.packInfo = function (data, isAdmin) {
     if (this.current) {
         data.mediatitle = this.current.media.title;
         if (isAdmin) {
-            data.mediaLink = util.formatLink(this.current.media.id, this.current.media.type);
+            data.mediaLink = util.formatLink(
+                this.current.media.id,
+                this.current.media.type,
+                this.current.media.meta
+            );
         }
     } else {
         data.mediatitle = "(Nothing Playing)";
@@ -407,7 +411,7 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
         data.title = false;
     }
 
-    var link = util.formatLink(id, type);
+    var link = util.formatLink(id, type, null);
     var perms = this.channel.modules.permissions;
 
     if (!perms.canAddVideo(user, data)) {
@@ -953,6 +957,10 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
     if (data.duration) {
         media.seconds = data.duration;
         media.duration = util.formatTime(media.seconds);
+    } else if (media.seconds === 0 && !this.channel.modules.permissions.canAddLive(user)) {
+        // Issue #766
+        qfail("You don't have permission to add livestreams");
+        return;
     }
 
     if (data.maxlength > 0 && media.seconds > data.maxlength) {

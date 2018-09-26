@@ -49,9 +49,6 @@ import session from './session';
 import { LegacyModule } from './legacymodule';
 import { PartitionModule } from './partition/partitionmodule';
 import { Gauge } from 'prom-client';
-import { AccountDB } from './db/account';
-import { ChannelDB } from './db/channel';
-import { AccountController } from './controller/account';
 import { EmailController } from './controller/email';
 
 var Server = function () {
@@ -83,12 +80,6 @@ var Server = function () {
     self.db = Database;
     self.db.init();
     ChannelStore.init();
-
-    const accountDB = new AccountDB(db.getDB());
-    const channelDB = new ChannelDB(db.getDB());
-
-    // controllers
-    const accountController = new AccountController(accountDB, globalMessageBus);
 
     let emailTransport;
     if (Config.getEmailConfig().getPasswordReset().isEnabled()) {
@@ -122,7 +113,9 @@ var Server = function () {
     var channelIndex;
     if (Config.get("enable-partition")) {
         channelIndex = new PartitionChannelIndex(
-                initModule.getRedisClientProvider().get()
+                initModule.getRedisClientProvider().get(),
+                initModule.getRedisClientProvider().get(),
+                initModule.partitionConfig.getChannelIndexChannel()
         );
     } else {
         channelIndex = new LocalChannelIndex();
@@ -136,8 +129,6 @@ var Server = function () {
             channelIndex,
             session,
             globalMessageBus,
-            accountController,
-            channelDB,
             Config.getEmailConfig(),
             emailController
     );
@@ -386,15 +377,17 @@ Server.prototype.setAnnouncement = function (data) {
 };
 
 Server.prototype.forceSave = function () {
-    Promise.map(this.channels, channel => {
+    Promise.map(this.channels, async channel => {
         try {
-            return channel.saveState().tap(() => {
-                LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
-            }).catch(err => {
-                LOGGER.error(`Failed to save /${this.chanPath}/${channel.name}: ${err.stack}`);
-            });
+            await channel.saveState();
+            LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
         } catch (error) {
-            LOGGER.error(`Failed to save channel: ${error.stack}`);
+            LOGGER.error(
+                'Failed to save /%s/%s: %s',
+                this.chanPath,
+                channel ? channel.name : '<undefined>',
+                error.stack
+            );
         }
     }, { concurrency: 5 }).then(() => {
         LOGGER.info('Finished save');
@@ -403,15 +396,17 @@ Server.prototype.forceSave = function () {
 
 Server.prototype.shutdown = function () {
     LOGGER.info("Unloading channels");
-    Promise.map(this.channels, channel => {
+    Promise.map(this.channels, async channel => {
         try {
-            return channel.saveState().tap(() => {
-                LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
-            }).catch(err => {
-                LOGGER.error(`Failed to save /${this.chanPath}/${channel.name}: ${err.stack}`);
-            });
+            await channel.saveState();
+            LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
         } catch (error) {
-            LOGGER.error(`Failed to save channel: ${error.stack}`);
+            LOGGER.error(
+                'Failed to save /%s/%s: %s',
+                this.chanPath,
+                channel ? channel.name : '<undefined>',
+                error.stack
+            );
         }
     }, { concurrency: 5 }).then(() => {
         LOGGER.info("Goodbye");
@@ -424,16 +419,23 @@ Server.prototype.shutdown = function () {
 
 Server.prototype.handlePartitionMapChange = function () {
     const channels = Array.prototype.slice.call(this.channels);
-    Promise.map(channels, channel => {
+    Promise.map(channels, async channel => {
         if (channel.dead) {
             return;
         }
 
         if (!this.partitionDecider.isChannelOnThisPartition(channel.uniqueName)) {
             LOGGER.info("Partition changed for " + channel.uniqueName);
-            return channel.saveState().then(() => {
-                channel.broadcastAll("partitionChange",
-                        this.partitionDecider.getPartitionForChannel(channel.uniqueName));
+            try {
+                await channel.saveState();
+
+                channel.broadcastAll(
+                    "partitionChange",
+                    this.partitionDecider.getPartitionForChannel(
+                        channel.uniqueName
+                    )
+                );
+
                 const users = Array.prototype.slice.call(channel.users);
                 users.forEach(u => {
                     try {
@@ -442,11 +444,16 @@ Server.prototype.handlePartitionMapChange = function () {
                         // Ignore
                     }
                 });
+
                 this.unloadChannel(channel, { skipSave: true });
-            }).catch(error => {
-                LOGGER.error(`Failed to unload /${this.chanPath}/${channel.name} for ` +
-                                  `partition map flip: ${error.stack}`);
-            });
+            } catch (error) {
+                LOGGER.error(
+                    'Failed to unload /%s/%s for partition map flip: %s',
+                    this.chanPath,
+                    channel ? channel.name : '<undefined>',
+                    error.stack
+                );
+            }
         }
     }, { concurrency: 5 }).then(() => {
         LOGGER.info("Partition reload complete");
