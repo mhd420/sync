@@ -25,6 +25,7 @@ var order = [
     'imgur.coffee',
     'gdrive-youtube.coffee',
     'hls.coffee',
+    'terdwork.coffee',
     'mixer.coffee',
     'update.coffee'
 ];

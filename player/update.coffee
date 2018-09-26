@@ -21,6 +21,7 @@ TYPE_MAP =
     tc: VideoJSPlayer
     cm: VideoJSPlayer
     mx: MixerPlayer
+    te: TerdPlayer
 
 window.loadMediaPlayer = (data) ->
     try

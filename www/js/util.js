@@ -1260,14 +1260,23 @@ function parseMediaLink(url) {
     url = url.trim();
     url = url.replace("feature=player_embedded&", "");
 
+    
     if(url.indexOf("rtmp://") == 0) {
         return {
             id: url,
             type: "rt"
         };
     }
-
+    
     var m;
+    if ((m = url.match(/http:\/\/terd\.work\/live\/(\w+)/)))
+    {
+        return {
+            id: m[1],
+            type: "te"
+        };
+    }
+
     if((m = url.match(/youtube\.com\/watch\?([^#]+)/))) {
         return {
             id: extractQueryParam(m[1], "v"),

@@ -108,6 +108,7 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                     # https://github.com/Dash-Industry-Forum/dash.js/issues/2184
                     autoplay: @sources[0].type != 'application/dash+xml',
                     controls: true,
+                    techOrder: ['html5', 'flvjs', 'flash'],
                     plugins:
                         videoJsResolutionSwitcher:
                             default: @sources[0].res

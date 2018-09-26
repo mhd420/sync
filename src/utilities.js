@@ -211,6 +211,8 @@
                 return "https://clips.twitch.tv/" + id;
             case "cm":
                 return id;
+            case "te":
+                return "http://terd.work/live?app=live&stream=" + id;
             case "mx":
                 if (meta !== null) {
                     return `https://mixer.com/${meta.mixer.channelToken}`;
@@ -233,6 +235,7 @@
             case "hb":
             case "hl":
             case "mx":
+            case "te":
                 return true;
             default:
                 return false;
