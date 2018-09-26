@@ -431,6 +431,12 @@ var Getters = {
         callback(false, media);
     },
 
+    te: function (id, callback) {
+        var title = "terd.work/" + id;
+        var media = new Media(id, title, "--:--", "te");
+        callback(false, media);
+    },
+
     /* imgur.com albums */
     im: function (id, callback) {
         /**
