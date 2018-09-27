@@ -112,6 +112,10 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                     plugins:
                         videoJsResolutionSwitcher:
                             default: @sources[0].res
+                    flvjs: 
+                        mediaDataSource:
+                            isLive: true
+                            cors: true
             )
             @player.ready(=>
                 # Have to use updateSrc instead of <source> tags

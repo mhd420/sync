@@ -58,6 +58,8 @@ function formatURL(data) {
             return data.id;
         case "mx":
             return "https://mixer.com/" + data.meta.mixer.channelToken;
+        case "te":
+            return "rtmp://terd.work/live/" + data.id;
         default:
             return "#";
     }
