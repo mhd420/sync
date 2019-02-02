@@ -76,6 +76,10 @@ CyTube.ui = {
 CyTube.featureFlag = {
     efficientEmotes: true
 };
+CyTube.channelCustomizations = {
+    cssHash: null,
+    jsHash: null
+};
 CyTube._internal_do_not_use_or_you_will_be_banned = {};
 
 function getOpt(k) {
@@ -131,7 +135,8 @@ var USEROPTS = {
     emotelist_sort       : getOrDefault("emotelist_sort", true),
     no_emotes            : getOrDefault("no_emotes", false),
     strip_image          : getOrDefault("strip_image", false),
-    chat_tab_method      : getOrDefault("chat_tab_method", "Cycle options")
+    chat_tab_method      : getOrDefault("chat_tab_method", "Cycle options"),
+    notifications        : getOrDefault("notifications", "never")
 };
 
 /* Backwards compatibility check */

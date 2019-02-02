@@ -1,3 +1,21 @@
+2018-12-07
+==========
+
+Users can now self-service request their account to be deleted, and it will be
+automatically purged after 7 days.  In order to send a notification email to
+the user about the request, copy the [email
+configuration](https://github.com/calzoneman/sync/blob/3.0/conf/example/email.toml#L43)
+to `conf/email.toml` (the same file used for password reset emails).
+
+2018-10-21
+==========
+
+The `sanitize-html` dependency has made a change that results in `"` no longer
+being replaced by `&quot;` when not inside an HTML attribute value.  This
+potentially breaks any chat filters matching quotes as `&quot;` (on my
+particular instance, this seems to be quite rare).  These filters will need to
+be updated in order to continue matching quotes.
+
 2018-08-27
 ==========
 
