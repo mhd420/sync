@@ -65,9 +65,6 @@ var defaults = {
     "channel-blacklist": [],
     "channel-path": "r",
     "channel-save-interval": 5,
-    "channel-storage": {
-        type: "file"
-    },
     "max-channels-per-user": 5,
     "max-accounts-per-ip": 5,
     "guest-login-delay": 60,
@@ -245,6 +242,28 @@ function loadEmailConfig() {
 function preprocessConfig(cfg) {
     // Root domain should start with a . for cookies
     var root = cfg.http["root-domain"];
+    if (/127\.0\.0\.1|localhost/.test(root)) {
+        LOGGER.warn(
+            "Detected 127.0.0.1 or localhost in root-domain '%s'.  This server " +
+            "will not work from other computers!  Set root-domain to the domain " +
+            "the website will be accessed from (e.g. example.com)",
+            root
+        );
+    }
+    if (/^http/.test(root)) {
+        LOGGER.warn(
+            "root-domain '%s' should not contain http:// or https://, removing it",
+            root
+        );
+        root = root.replace(/^https?:\/\//, "");
+    }
+    if (/:\d+$/.test(root)) {
+        LOGGER.warn(
+            "root-domain '%s' should not contain a trailing port, removing it",
+            root
+        );
+        root = root.replace(/:\d+$/, "");
+    }
     root = root.replace(/^\.*/, "");
     cfg.http["root-domain"] = root;
     if (root.indexOf(".") !== -1 && !net.isIP(root)) {
@@ -328,6 +347,13 @@ function preprocessConfig(cfg) {
     cfg.io["ipv4-default"] = cfg.io["ipv4-ssl"] || cfg.io["ipv4-nossl"];
     cfg.io["ipv6-default"] = cfg.io["ipv6-ssl"] || cfg.io["ipv6-nossl"];
 
+    if (/127\.0\.0\.1|localhost/.test(cfg.io["ipv4-default"])) {
+        LOGGER.warn(
+            "socket.io is bound to localhost, this server will be inaccessible " +
+            "from other computers!"
+        );
+    }
+
     // Generate RegExps for reserved names
     var reserved = cfg["reserved-names"];
     for (var key in reserved) {
@@ -406,6 +432,10 @@ function preprocessConfig(cfg) {
     cfg.io.throttle = Object.assign({
         'bucket-capacity': cfg.io.throttle['in-rate-limit']
     }, cfg.io.throttle);
+
+    if (!cfg['channel-storage']) {
+        cfg['channel-storage'] = { type: undefined };
+    }
 
     return cfg;
 }

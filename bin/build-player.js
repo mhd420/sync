@@ -27,6 +27,7 @@ var order = [
     'hls.coffee',
     'terdwork.coffee',
     'mixer.coffee',
+    'twitchclip.coffee',
     'update.coffee'
 ];
 

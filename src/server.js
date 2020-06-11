@@ -15,15 +15,11 @@ module.exports = {
             exists || fs.mkdirSync(chanlogpath);
         });
 
-        var chandumppath = path.join(__dirname, "../chandump");
-        fs.exists(chandumppath, function (exists) {
-            exists || fs.mkdirSync(chandumppath);
-        });
-
         var gdvttpath = path.join(__dirname, "../google-drive-subtitles");
         fs.exists(gdvttpath, function (exists) {
             exists || fs.mkdirSync(gdvttpath);
         });
+
         singleton = new Server();
         return singleton;
     },
@@ -161,6 +157,18 @@ var Server = function () {
         if (bind.https && Config.get("https.enabled")) {
             self.servers[id] = https.createServer(opts, self.express)
                                     .listen(bind.port, bind.ip);
+            self.servers[id].on("error", error => {
+                if (error.code === "EADDRINUSE") {
+                    LOGGER.fatal(
+                        "Could not bind %s: address already in use.  Check " +
+                        "whether another application has already bound this " +
+                        "port, or whether another instance of this server " +
+                        "is running.",
+                        id
+                    );
+                    process.exit(1);
+                }
+            });
             self.servers[id].on("clientError", function (err, socket) {
                 try {
                     socket.destroy();
@@ -170,6 +178,18 @@ var Server = function () {
             });
         } else if (bind.http) {
             self.servers[id] = self.express.listen(bind.port, bind.ip);
+            self.servers[id].on("error", error => {
+                if (error.code === "EADDRINUSE") {
+                    LOGGER.fatal(
+                        "Could not bind %s: address already in use.  Check " +
+                        "whether another application has already bound this " +
+                        "port, or whether another instance of this server " +
+                        "is running.",
+                        id
+                    );
+                    process.exit(1);
+                }
+            });
             self.servers[id].on("clientError", function (err, socket) {
                 try {
                     socket.destroy();

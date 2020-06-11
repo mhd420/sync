@@ -174,23 +174,6 @@ Channel.prototype.initModules = function () {
     self.logger.log("[init] Loaded modules: " + inited.join(", "));
 };
 
-Channel.prototype.getDiskSize = function (cb) {
-    if (this._getDiskSizeTimeout > Date.now()) {
-        return cb(null, this._cachedDiskSize);
-    }
-
-    var self = this;
-    var file = path.join(__dirname, "..", "..", "chandump", self.uniqueName);
-    fs.stat(file, function (err, stats) {
-        if (err) {
-            return cb(err);
-        }
-
-        self._cachedDiskSize = stats.size;
-        cb(null, self._cachedDiskSize);
-    });
-};
-
 Channel.prototype.loadState = function () {
     /* Don't load from disk if not registered */
     if (!this.is(Flags.C_REGISTERED)) {
@@ -461,6 +444,13 @@ Channel.prototype.acceptUser = function (user) {
     });
 
     this.sendUserlist([user]);
+
+    // Managing this from here is not great, but due to the sequencing involved
+    // and the limitations of the existing design, it'll have to do.
+    if (this.modules.playlist.leader !== null) {
+        user.socket.emit("setLeader", this.modules.playlist.leader.getName());
+    }
+
     this.broadcastUsercount();
     if (!this.is(Flags.C_REGISTERED)) {
         user.socket.emit("channelNotRegistered");

@@ -5,6 +5,7 @@ window.DailymotionPlayer = class DailymotionPlayer extends Player
 
         @setMediaProperties(data)
         @initialVolumeSet = false
+        @playbackReadyCb = null
 
         waitUntilDefined(window, 'DM', =>
             removeOld()
@@ -26,7 +27,7 @@ window.DailymotionPlayer = class DailymotionPlayer extends Player
             )
 
             @dm.addEventListener('apiready', =>
-                @dm.ready = true
+                @dmReady = true
                 @dm.addEventListener('ended', ->
                     if CLIENT.leader
                         socket.emit('playNext')
@@ -47,43 +48,64 @@ window.DailymotionPlayer = class DailymotionPlayer extends Player
                         @setVolume(VOLUME)
                         @initialVolumeSet = true
                 )
+
+                # Once the video stops, the internal state of the player
+                # becomes unusable and attempting to load() will corrupt it and
+                # crash the player with an error.  As a short–medium term
+                # workaround, mark the player as "not ready" until the next
+                # playback_ready event
+                @dm.addEventListener('video_end', =>
+                    @dmReady = false
+                )
+                @dm.addEventListener('playback_ready', =>
+                    @dmReady = true
+                    if @playbackReadyCb
+                        @playbackReadyCb()
+                        @playbackReadyCb = null
+                )
             )
         )
 
     load: (data) ->
         @setMediaProperties(data)
-        if @dm and @dm.ready
+        if @dm and @dmReady
             @dm.load(data.id)
             @dm.seek(data.currentTime)
+        else if @dm
+            # TODO: Player::load() needs to be made asynchronous in the future
+            console.log('Warning: load() called before DM is ready, queueing callback')
+            @playbackReadyCb = () =>
+                @dm.load(data.id)
+                @dm.seek(data.currentTime)
         else
-            console.error('WTF?  DailymotionPlayer::load() called but dm is not ready')
+            console.error('WTF?  DailymotionPlayer::load() called but @dm is undefined')
 
     pause: ->
-        if @dm and @dm.ready
+        if @dm and @dmReady
             @paused = true
             @dm.pause()
 
     play: ->
-        if @dm and @dm.ready
+        if @dm and @dmReady
             @paused = false
             @dm.play()
 
     seekTo: (time) ->
-        if @dm and @dm.ready
+        if @dm and @dmReady
             @dm.seek(time)
 
     setVolume: (volume) ->
-        if @dm and @dm.ready
+        if @dm and @dmReady
             @dm.setVolume(volume)
 
     getTime: (cb) ->
-        if @dm and @dm.ready
+        if @dm and @dmReady
             cb(@dm.currentTime)
         else
             cb(0)
 
     getVolume: (cb) ->
-        if @dm and @dm.ready
+        if @dm and @dmReady
             if @dm.muted
                 cb(0)
             else

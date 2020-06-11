@@ -8,6 +8,8 @@ var path = require("path");
 
 import { callOnce } from './util/call-once';
 
+const CYTUBE_VERSION = require('../package.json').version;
+
 const LOGGER = require('@calzoneman/jsli')('ffmpeg');
 const ECODE_MESSAGES = {
     ENOTFOUND: e => (
@@ -84,7 +86,9 @@ function initFFLog() {
 }
 
 function fixRedirectIfNeeded(urldata, redirect) {
-    if (!/^https:/.test(redirect)) {
+    let parsedRedirect = urlparse.parse(redirect);
+    if (parsedRedirect.host === null) {
+        // Relative path, munge it to absolute
         redirect = urldata.protocol + "//" + urldata.host + redirect;
     }
 
@@ -135,6 +139,13 @@ function testUrl(url, cb, params = { redirCount: 0, cookie: '' }) {
     const { redirCount, cookie } = params;
     var data = urlparse.parse(url);
     if (!/https:/.test(data.protocol)) {
+        if (redirCount > 0) {
+            // If the original URL redirected, the user is probably not aware
+            // that the link they entered (which was HTTPS) is redirecting to a
+            // non-HTTPS endpoint
+            return cb(`Unexpected redirect to a non-HTTPS link: ${url}`);
+        }
+
         return cb("Only links starting with 'https://' are supported " +
                   "for raw audio/video support");
     }
@@ -146,8 +157,11 @@ function testUrl(url, cb, params = { redirCount: 0, cookie: '' }) {
 
     var transport = (data.protocol === "https:") ? https : http;
     data.method = "HEAD";
+    data.headers = {
+        'User-Agent': `CyTube/${CYTUBE_VERSION}`
+    };
     if (cookie) {
-        data.headers = { 'Cookie': cookie };
+        data.headers['Cookie'] = cookie;
     }
 
     try {
@@ -161,6 +175,7 @@ function testUrl(url, cb, params = { redirCount: 0, cookie: '' }) {
                               "on the website hosting the link.  For best results, use " +
                               "a direct link.  See https://git.io/vrE75 for details.");
                 }
+
                 const nextParams = {
                     redirCount: redirCount + 1,
                     cookie: cookie + getCookie(res)
@@ -174,11 +189,10 @@ function testUrl(url, cb, params = { redirCount: 0, cookie: '' }) {
             }
 
             if (!/^audio|^video/.test(res.headers["content-type"])) {
-                return cb("Expected a content-type starting with 'audio' or 'video', but " +
-                          "got '" + res.headers["content-type"] + "'.  Only direct links " +
-                          "to video and audio files are accepted, and the website hosting " +
-                          "the file must be configured to send the correct MIME type.  " +
-                          "See https://git.io/vrE75 for details.");
+                cb("Could not detect a supported audio/video type.  See " +
+                   "https://git.io/fjtOK for a list of supported providers.  " +
+                   "(Content-Type was: '" + res.headers["content-type"] + "')");
+                return;
             }
 
             cb();
@@ -337,7 +351,14 @@ exports.ffprobe = function ffprobe(filename, cb) {
     var childErr;
     var args = ["-show_streams", "-show_format", filename];
     if (USE_JSON) args = ["-of", "json"].concat(args);
-    var child = spawn(Config.get("ffmpeg.ffprobe-exec"), args);
+    let child;
+    try {
+        child = spawn(Config.get("ffmpeg.ffprobe-exec"), args);
+    } catch (error) {
+        LOGGER.error("Unable to spawn() ffprobe process: %s", error.stack);
+        cb(error);
+        return;
+    }
     var stdout = "";
     var stderr = "";
     var timer = setTimeout(function () {
