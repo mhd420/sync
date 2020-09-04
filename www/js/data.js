@@ -51,7 +51,7 @@ var LASTCHAT = {
     name: ""
 };
 var FOCUSED = true;
-var PAGETITLE = "CyTube";
+var PAGETITLE = "Terd Work";
 var TITLE_BLINK;
 var CHATSOUND = new Audio("/boop.wav");
 var KICKED = false;

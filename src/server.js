@@ -362,15 +362,7 @@ Server.prototype.unloadChannel = function (chan, options) {
 };
 
 Server.prototype.packChannelList = function (publicOnly, isAdmin) {
-    var channels = this.channels.filter(function (c) {
-        if (!publicOnly) {
-            return true;
-        }
-
-        return c.modules.options && c.modules.options.get("show_public");
-    });
-
-    return channels.map(function (c) {
+    return this.channels.map(function (c) {
         return c.packInfo(isAdmin);
     });
 };
