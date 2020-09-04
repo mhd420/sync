@@ -1,3 +1,27 @@
+2020-08-21
+==========
+
+Some of CyTube's dependencies depends on features in newer versions of node.js.
+Accordingly, node 10 is no longer supported.  Administrators are recommended to
+use node 12 (the active LTS), or node 14 (the current version).
+
+2020-06-22
+==========
+
+Twitch has [updated their embed
+player](https://discuss.dev.twitch.tv/t/twitch-embedded-player-migration-timeline-update/25588),
+which adds new requirements for embedding Twitch:
+
+  1. The origin website must be served over HTTPS
+  2. The origin website must be served over the default port (i.e., the hostname
+     cannot include a port; https://example.com:8443 won't work)
+
+Additionally, third-party cookies must be enabled for whatever internal
+subdomains Twitch is using.
+
+CyTube now sets the parameters expected by Twitch, and displays an error message
+if it detects (1) or (2) above are not met.
+
 2020-02-15
 ==========
 

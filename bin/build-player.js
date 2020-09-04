@@ -26,7 +26,6 @@ var order = [
     'gdrive-youtube.coffee',
     'hls.coffee',
     'terdwork.coffee',
-    'mixer.coffee',
     'twitchclip.coffee',
     'update.coffee'
 ];
