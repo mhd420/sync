@@ -212,7 +212,7 @@
             case "cm":
                 return id;
             case "te":
-                return "http://terd.work/live?app=live&stream=" + id;
+                return "http://terd.work/live/" + id + ".flv";
             case "mx":
                 if (meta !== null) {
                     return `https://mixer.com/${meta.mixer.channelToken}`;
