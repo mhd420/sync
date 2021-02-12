@@ -2,7 +2,7 @@
   "author": "Calvin Montgomery",
   "name": "CyTube",
   "description": "Online media synchronizer and chat",
-  "version": "3.72.0",
+  "version": "3.75.0",
   "repository": {
     "url": "http://github.com/calzoneman/sync"
   },
@@ -10,6 +10,7 @@
   "dependencies": {
     "@calzoneman/express-babel-decorators": "^1.0.0",
     "@calzoneman/jsli": "^2.0.1",
+    "@cytube/mediaquery": "0.0.25",
     "bcrypt": "^5.0.0",
     "bluebird": "^3.5.1",
     "body-parser": "^1.18.2",
@@ -19,8 +20,7 @@
     "cookie-parser": "^1.4.0",
     "create-error": "^0.3.1",
     "csrf": "^3.0.0",
-    "cytube-mediaquery": "git://github.com/CyTube/mediaquery",
-    "cytubefilters": "git://github.com/calzoneman/cytubefilters.git#c6df180eeb226eaffc7909cf047d3667dc58ef67",
+    "cytubefilters": "github:calzoneman/cytubefilters#c67b2dab2dc5cc5ed11018819f71273d0f8a1bf5",
     "express": "^4.16.2",
     "express-minify": "^1.0.0",
     "graceful-fs": "^4.1.2",

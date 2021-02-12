@@ -3,12 +3,12 @@ const Media = require("./media");
 const CustomEmbedFilter = require("./customembed").filter;
 const Config = require("./config");
 const ffmpeg = require("./ffmpeg");
-const mediaquery = require("cytube-mediaquery");
-const YouTube = require("cytube-mediaquery/lib/provider/youtube");
-const Vimeo = require("cytube-mediaquery/lib/provider/vimeo");
-const Streamable = require("cytube-mediaquery/lib/provider/streamable");
-const TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
-const TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
+const mediaquery = require("@cytube/mediaquery");
+const YouTube = require("@cytube/mediaquery/lib/provider/youtube");
+const Vimeo = require("@cytube/mediaquery/lib/provider/vimeo");
+const Streamable = require("@cytube/mediaquery/lib/provider/streamable");
+const TwitchVOD = require("@cytube/mediaquery/lib/provider/twitch-vod");
+const TwitchClip = require("@cytube/mediaquery/lib/provider/twitch-clip");
 import { Counter } from 'prom-client';
 import { lookup as lookupCustomMetadata } from './custom-media';
 
@@ -70,6 +70,9 @@ var Getters = {
             var meta = {};
             if (video.meta.blocked) {
                 meta.restricted = video.meta.blocked;
+            }
+            if (video.meta.ytRating) {
+                meta.ytRating = video.meta.ytRating;
             }
 
             var media = new Media(video.id, video.title, video.duration, "yt", meta);

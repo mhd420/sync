@@ -982,6 +982,10 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
         }
     }
 
+    if (media.meta.ytRating === "ytAgeRestricted") {
+        return qfail("Cannot add age restricted videos. See: https://github.com/calzoneman/sync/wiki/Frequently-Asked-Questions#why-dont-age-restricted-youtube-videos-work");
+    }
+
     /* Warn about blocked countries */
     if (media.meta.restricted) {
         user.socket.emit("queueWarn", {

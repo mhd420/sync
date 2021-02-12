@@ -6,6 +6,7 @@ import { loadFromToml } from './configuration/configloader';
 import { CamoConfig } from './configuration/camoconfig';
 import { PrometheusConfig } from './configuration/prometheusconfig';
 import { EmailConfig } from './configuration/emailconfig';
+import { CaptchaConfig } from './configuration/captchaconfig';
 
 const LOGGER = require('@calzoneman/jsli')('config');
 
@@ -129,34 +130,25 @@ var cfg = defaults;
 let camoConfig = new CamoConfig();
 let prometheusConfig = new PrometheusConfig();
 let emailConfig = new EmailConfig();
+let captchaConfig = new CaptchaConfig();
 
 /**
  * Initializes the configuration from the given YAML file
  */
 exports.load = function (file) {
+    let absPath = path.join(__dirname, "..", file);
     try {
-        cfg = YAML.load(path.join(__dirname, "..", file));
+        cfg = YAML.load(absPath);
     } catch (e) {
         if (e.code === "ENOENT") {
-            LOGGER.info(file + " does not exist, assuming default configuration");
-            cfg = defaults;
-            return;
+            throw new Error(`No such file: ${absPath}`);
         } else {
-            LOGGER.error("Error loading config file " + file + ": ");
-            LOGGER.error(e);
-            if (e.stack) {
-                LOGGER.error(e.stack);
-            }
-            cfg = defaults;
-            return;
+            throw new Error(`Invalid config file ${absPath}: ${e}`);
         }
     }
 
     if (cfg == null) {
-        LOGGER.info(file + " is an Invalid configuration file, " +
-                          "assuming default configuration");
-        cfg = defaults;
-        return;
+        throw new Error("Configuration parser returned null");
     }
 
     if (cfg.mail) {
@@ -176,6 +168,7 @@ exports.load = function (file) {
     loadCamoConfig();
     loadPrometheusConfig();
     loadEmailConfig();
+    loadCaptchaConfig();
 };
 
 function checkLoadConfig(configClass, filename) {
@@ -235,6 +228,18 @@ function loadEmailConfig() {
     } else {
         emailConfig = conf;
         LOGGER.info('Loaded email configuration from conf/email.toml.');
+    }
+}
+
+function loadCaptchaConfig() {
+    const conf = checkLoadConfig(Object, 'captcha.toml');
+
+    if (conf === null) {
+        LOGGER.info('No captcha configuration found, defaulting to disabled');
+        captchaConfig.load();
+    } else {
+        captchaConfig.load(conf);
+        LOGGER.info('Loaded captcha configuration from conf/captcha.toml.');
     }
 }
 
@@ -386,7 +391,7 @@ function preprocessConfig(cfg) {
     }
 
     if (cfg["youtube-v3-key"]) {
-        require("cytube-mediaquery/lib/provider/youtube").setApiKey(
+        require("@cytube/mediaquery/lib/provider/youtube").setApiKey(
                 cfg["youtube-v3-key"]);
     } else {
         LOGGER.warn("No YouTube v3 API key set.  YouTube links will " +
@@ -396,9 +401,9 @@ function preprocessConfig(cfg) {
     }
 
     if (cfg["twitch-client-id"]) {
-        require("cytube-mediaquery/lib/provider/twitch-vod").setClientID(
+        require("@cytube/mediaquery/lib/provider/twitch-vod").setClientID(
                 cfg["twitch-client-id"]);
-        require("cytube-mediaquery/lib/provider/twitch-clip").setClientID(
+        require("@cytube/mediaquery/lib/provider/twitch-clip").setClientID(
                 cfg["twitch-client-id"]);
     } else {
         LOGGER.warn("No Twitch Client ID set.  Twitch VOD links will " +
@@ -486,4 +491,8 @@ exports.getPrometheusConfig = function getPrometheusConfig() {
 
 exports.getEmailConfig = function getEmailConfig() {
     return emailConfig;
+};
+
+exports.getCaptchaConfig = function getCaptchaConfig() {
+    return captchaConfig;
 };
