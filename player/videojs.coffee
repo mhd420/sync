@@ -115,10 +115,6 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
             pluginData =
                 videoJsResolutionSwitcher:
                     default: @sources[0].res
-                flvjs: 
-                    mediaDataSource:
-                        isLive: true
-                        cors: true
 
             if hasAnyAudioTracks(data)
                 pluginData.audioSwitch =
@@ -129,8 +125,11 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                     # https://github.com/Dash-Industry-Forum/dash.js/issues/2184
                     autoplay: @sources[0].type != 'application/dash+xml',
                     controls: true,
-                    plugins: pluginData
-
+                    plugins: pluginData    
+                    flvjs: 
+                        mediaDataSource:
+                            isLive: true
+                            cors: true
             )
             @player.ready(=>
                 # Have to use updateSrc instead of <source> tags
