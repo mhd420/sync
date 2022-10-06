@@ -76,10 +76,6 @@ User.prototype.handleJoinChannel = function handleJoinChannel(data) {
     }
 
     data.name = data.name.toLowerCase();
-    if (data.name in Config.get("channel-blacklist")) {
-        this.kick("This channel is blacklisted.");
-        return;
-    }
 
     this.waitFlag(Flags.U_READY, () => {
         var chan;
@@ -102,10 +98,6 @@ User.prototype.handleJoinChannel = function handleJoinChannel(data) {
 
         if (!chan.is(Flags.C_READY)) {
             chan.once("loadFail", reason => {
-                this.socket.emit("errorMsg", {
-                    msg: reason,
-                    alert: true
-                });
                 this.kick(`Channel could not be loaded: ${reason}`);
             });
         }

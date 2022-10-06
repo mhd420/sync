@@ -8,7 +8,6 @@ var Flags = require("../flags");
 var db = require("../database");
 var CustomEmbedFilter = require("../customembed").filter;
 var XSS = require("../xss");
-import counters from '../counters';
 import { Counter } from 'prom-client';
 
 const LOGGER = require('@calzoneman/jsli')('playlist');
@@ -159,14 +158,21 @@ PlaylistModule.prototype.load = function (data) {
             }
         } else if (item.media.type === "gd") {
             delete item.media.meta.gpdirect;
-        } else if (["vm", "jw", "mx"].includes(item.media.type)) {
+        } else if (["vm", "jw", "mx", "im", "gp", "us", "hb"].includes(item.media.type)) {
             // JW has been deprecated for a long time
             // VM shut down in December 2017
             // Mixer shut down in July 2020
+            // Imgur replaced albums with a feature called galleries in 2019
+            // Picasa shut down in 2016
+            // Ustream was sunset by IBM in September 2018
+            // SmashCast (Hitbox) seemed to just vanish November 2020
             LOGGER.warn(
                 "Dropping playlist item with deprecated type %s",
                 item.media.type
             );
+            return;
+        } else if (item.media.meta.embed && item.media.meta.embed.tag !== 'iframe') {
+            LOGGER.warn("Dropping playlist item with flash embed");
             return;
         }
 
@@ -512,7 +518,6 @@ PlaylistModule.prototype.queueStandard = function (user, data) {
 
     const self = this;
     this.channel.refCounter.ref("PlaylistModule::queueStandard");
-    counters.add("playlist:queue:count", 1);
     this.semaphore.queue(function (lock) {
         InfoGetter.getMedia(data.id, data.type, function (err, media) {
             if (err) {

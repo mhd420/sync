@@ -90,15 +90,6 @@ describe('custom-media', () => {
             assert.throws(() => validate(invalid), /URL protocol must be HTTPS/);
         });
 
-        it('rejects non-live DASH', () => {
-            invalid.live = false;
-            invalid.sources[0].contentType = 'application/dash+xml';
-
-            assert.throws(
-                () => validate(invalid),
-                /contentType "application\/dash\+xml" requires live: true/
-            );
-        });
     });
 
     describe('#validateSources', () => {
@@ -242,7 +233,8 @@ describe('custom-media', () => {
                             contentType: 'text/vtt',
                             name: 'English Subtitles'
                         }
-                    ]
+                    ],
+                    thumbnail: 'https://example.com/thumb.jpg',
                 }
             };
         });
@@ -330,7 +322,8 @@ describe('custom-media', () => {
                             contentType: 'text/vtt',
                             name: 'English Subtitles'
                         }
-                    ]
+                    ],
+                    thumbnail: 'https://example.com/thumb.jpg',
                 }
             };
 

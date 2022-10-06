@@ -42,9 +42,13 @@ getSourceLabel = (source) ->
     else
         return "#{source.quality}p #{source.contentType.split('/')[1]}"
 
-waitUntilDefined(window, 'videojs', =>
-    videojs.options.flash.swf = '/video-js.swf'
-)
+hasAnyTextTracks = (data) ->
+    ntracks = data?.meta?.textTracks?.length ? 0
+    return ntracks > 0
+
+hasAnyAudioTracks = (data) ->
+    ntracks = data?.meta?.audioTracks?.length ? 0
+    return ntracks > 0
 
 window.VideoJSPlayer = class VideoJSPlayer extends Player
     constructor: (data) ->
@@ -59,7 +63,7 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                 width: '100%'
                 height: '100%'
 
-            if @mediaType == 'cm' and data.meta.textTracks
+            if @mediaType == 'cm' and hasAnyTextTracks(data)
                 attrs.crossorigin = 'anonymous'
 
             video = $('<video/>')
@@ -108,22 +112,30 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                     $('<track/>').attr(attrs).appendTo(video)
                 )
 
+            pluginData =
+                videoJsResolutionSwitcher:
+                    default: @sources[0].res
+                flvjs: 
+                    mediaDataSource:
+                        isLive: true
+                        cors: true
+
+            if hasAnyAudioTracks(data)
+                pluginData.audioSwitch =
+                    audioTracks: data.meta.audioTracks,
+                    volume: VOLUME
+
             @player = videojs(video[0],
                     # https://github.com/Dash-Industry-Forum/dash.js/issues/2184
                     autoplay: @sources[0].type != 'application/dash+xml',
                     controls: true,
-                    techOrder: ['html5', 'flvjs', 'flash'],
-                    plugins:
-                        videoJsResolutionSwitcher:
-                            default: @sources[0].res
-                    flvjs: 
-                        mediaDataSource:
-                            isLive: true
-                            cors: true
+                    plugins: pluginData
+
             )
             @player.ready(=>
                 # Have to use updateSrc instead of <source> tags
                 # see: https://github.com/videojs/video.js/issues/3428
+                @player.poster(data.meta.thumbnail)
                 @player.updateSrc(@sources)
                 @player.on('error', =>
                     err = @player.error()
@@ -135,8 +147,11 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                             @player.src(@sources[@sourceIdx])
                         else
                             console.error('Out of sources, video will not play')
-                            if @mediaType is 'gd' and not window.hasDriveUserscript
-                                window.promptToInstallDriveUserscript()
+                            if @mediaType is 'gd'
+                                if not window.hasDriveUserscript
+                                    window.promptToInstallDriveUserscript()
+                                else
+                                    window.tellUserNotToContactMeAboutThingsThatAreNotSupported()
                 )
                 @setVolume(VOLUME)
                 @player.on('ended', ->

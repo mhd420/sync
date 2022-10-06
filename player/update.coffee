@@ -3,7 +3,6 @@ TYPE_MAP =
     vi: VimeoPlayer
     dm: DailymotionPlayer
     gd: GoogleDrivePlayer
-    gp: VideoJSPlayer
     fi: FilePlayer
     sc: SoundCloudPlayer
     li: LivestreamPlayer
@@ -11,14 +10,16 @@ TYPE_MAP =
     tv: TwitchPlayer
     cu: CustomEmbedPlayer
     rt: RTMPPlayer
-    hb: SmashcastPlayer
-    us: UstreamPlayer
-    im: ImgurPlayer
     hl: HLSPlayer
     sb: StreamablePlayer
     tc: TwitchClipPlayer
     cm: VideoJSPlayer
     te: TerdPlayer
+    pt: PeerPlayer
+    bc: IframeChild
+    bn: IframeChild
+    od: OdyseePlayer
+    nv: NicoPlayer
 
 window.loadMediaPlayer = (data) ->
     try
@@ -110,7 +111,8 @@ window.removeOld = (replace) ->
     $('#soundcloud-volume-holder').remove()
     replace ?= $('<div/>').addClass('embed-responsive-item')
     old = $('#ytapiplayer')
+    old.attr('id', 'ytapiplayer-old')
+    replace.attr('id', 'ytapiplayer')
     replace.insertBefore(old)
     old.remove()
-    replace.attr('id', 'ytapiplayer')
     return replace

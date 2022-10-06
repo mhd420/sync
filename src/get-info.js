@@ -6,6 +6,11 @@ const ffmpeg = require("./ffmpeg");
 const mediaquery = require("@cytube/mediaquery");
 const YouTube = require("@cytube/mediaquery/lib/provider/youtube");
 const Vimeo = require("@cytube/mediaquery/lib/provider/vimeo");
+const Odysee = require("@cytube/mediaquery/lib/provider/odysee");
+const PeerTube = require("@cytube/mediaquery/lib/provider/peertube");
+const BitChute = require("@cytube/mediaquery/lib/provider/bitchute");
+const BandCamp = require("@cytube/mediaquery/lib/provider/bandcamp");
+const Nicovideo = require("@cytube/mediaquery/lib/provider/nicovideo");
 const Streamable = require("@cytube/mediaquery/lib/provider/streamable");
 const TwitchVOD = require("@cytube/mediaquery/lib/provider/twitch-vod");
 const TwitchClip = require("@cytube/mediaquery/lib/provider/twitch-clip");
@@ -204,114 +209,22 @@ var Getters = {
         });
     },
 
-    /* soundcloud.com */
+    /* soundcloud.com - see https://github.com/calzoneman/sync/issues/916 */
     sc: function (id, callback) {
-        /* TODO: require server owners to register their own API key, put in config */
-        const SC_CLIENT = "2e0c82ab5a020f3a7509318146128abd";
-
-        var m = id.match(/([\w-/.:]+)/);
-        if (m) {
-            id = m[1];
-        } else {
-            callback("Invalid ID", null);
-            return;
-        }
-
-        var options = {
-            host: "api.soundcloud.com",
-            port: 443,
-            path: "/resolve.json?url=" + id + "&client_id=" + SC_CLIENT,
-            method: "GET",
-            dataType: "jsonp",
-            timeout: 1000
-        };
-
-        urlRetrieve(https, options, function (status, data) {
-            switch (status) {
-                case 200:
-                case 302:
-                    break; /* Request is OK, skip to handling data */
-                case 400:
-                    return callback("Invalid request", null);
-                case 403:
-                    return callback("Private sound", null);
-                case 404:
-                    return callback("Sound not found", null);
-                case 500:
-                case 503:
-                    return callback("Service unavailable", null);
-                default:
-                    return callback("HTTP " + status, null);
-            }
-
-            var track = null;
-            try {
-                data = JSON.parse(data);
-                track = data.location;
-            } catch(e) {
-                callback(e, null);
-                return;
-            }
-
-            var options2 = {
-                host: "api.soundcloud.com",
-                port: 443,
-                path: track,
-                method: "GET",
-                dataType: "jsonp",
-                timeout: 1000
-            };
-
-            /**
-             * There has got to be a way to directly get the data I want without
-             * making two requests to Soundcloud...right?
-             * ...right?
-             */
-            urlRetrieve(https, options2, function (status, data) {
-                switch (status) {
-                    case 200:
-                        break; /* Request is OK, skip to handling data */
-                    case 400:
-                        return callback("Invalid request", null);
-                    case 403:
-                        return callback("Private sound", null);
-                    case 404:
-                        return callback("Sound not found", null);
-                    case 500:
-                    case 503:
-                        return callback("Service unavailable", null);
-                    default:
-                        return callback("HTTP " + status, null);
-                }
-
-                try {
-                    data = JSON.parse(data);
-                    var seconds = data.duration / 1000;
-                    var title = data.title;
-                    var meta = {};
-                    if (data.sharing === "private" && data.embeddable_by === "all") {
-                        meta.scuri = data.uri;
-                    }
-                    var media = new Media(id, title, seconds, "sc", meta);
-                    callback(false, media);
-                } catch(e) {
-                    callback(e, null);
-                }
-            });
-
-        });
+        callback(
+            "Soundcloud is not supported anymore due to requiring OAuth but not " +
+            "accepting new API key registrations."
+        );
     },
 
     /* livestream.com */
     li: function (id, callback) {
-        var m = id.match(/([\w-]+)/);
-        if (m) {
-            id = m[1];
-        } else {
+        if (!id.match(/^\d+;\d+$/)) {
             callback("Invalid ID", null);
             return;
         }
-        var title = "Livestream.com - " + id;
+
+        var title = "Livestream.com";
         var media = new Media(id, title, "--:--", "li");
         callback(false, media);
     },
@@ -368,47 +281,6 @@ var Getters = {
         });
     },
 
-    /* ustream.tv */
-    us: function (id, callback) {
-        var m = id.match(/(channel\/[^?&#]+)/);
-        if (m) {
-            id = m[1];
-        } else {
-            callback("Invalid ID", null);
-            return;
-        }
-
-        var options = {
-            host: "www.ustream.tv",
-            port: 443,
-            path: "/" + id,
-            method: "GET",
-            timeout: 1000
-        };
-
-        urlRetrieve(https, options, function (status, data) {
-            if(status !== 200) {
-                callback("Ustream HTTP " + status, null);
-                return;
-            }
-
-            /*
-             * Yes, regexing this information out of the HTML sucks.
-             * No, there is not a better solution -- it seems IBM
-             * deprecated the old API (or at least replaced with an
-             * enterprise API marked "Contact sales") so fuck it.
-             */
-            var m = data.match(/https:\/\/www\.ustream\.tv\/embed\/(\d+)/);
-            if (m) {
-                var title = "Ustream.tv - " + id;
-                var media = new Media(m[1], title, "--:--", "us");
-                callback(false, media);
-            } else {
-                callback("Channel ID not found", null);
-            }
-        });
-    },
-
     /* rtmp stream */
     rt: function (id, callback) {
         var title = "Livestream";
@@ -430,12 +302,6 @@ var Getters = {
         callback(false, media);
     },
 
-    te: function (id, callback) {
-        var title = "terd.work/" + id;
-        var media = new Media(id, title, "--:--", "te");
-        callback(false, media);
-    },
-
     /* imgur.com albums */
     im: function (id, callback) {
         /**
@@ -450,6 +316,12 @@ var Getters = {
         }
         var title = "Imgur Album - " + id;
         var media = new Media(id, title, "--:--", "im");
+        callback(false, media);
+    },
+
+    te: function (id, callback) {
+        var title = "terd.work/" + id;
+        var media = new Media(id, title, "--:--", "te");
         callback(false, media);
     },
 
@@ -504,28 +376,6 @@ var Getters = {
         });
     },
 
-    /* hitbox.tv / smashcast.tv */
-    hb: function (id, callback) {
-        var m = id.match(/([\w-]+)/);
-        if (m) {
-            id = m[1];
-        } else {
-            callback("Invalid ID", null);
-            return;
-        }
-        var title = "Smashcast - " + id;
-        var media = new Media(id, title, "--:--", "hb");
-        callback(false, media);
-    },
-
-    /* vid.me */
-    vm: function (id, callback) {
-        process.nextTick(
-            callback,
-            "As of December 2017, vid.me is no longer in service."
-        );
-    },
-
     /* streamable */
     sb: function (id, callback) {
         if (!/^[\w-]+$/.test(id)) {
@@ -542,6 +392,16 @@ var Getters = {
         });
     },
 
+    /* PeerTube network */
+    pt: function (id, callback) {
+        PeerTube.lookup(id).then(video => {
+            video = new Media(video.id, video.title, video.duration, "pt", video.meta);
+            callback(null, video);
+        }).catch(error => {
+            callback(error.message || error);
+        });
+    },
+
     /* custom media - https://github.com/calzoneman/sync/issues/655 */
     cm: async function (id, callback) {
         try {
@@ -552,12 +412,44 @@ var Getters = {
         }
     },
 
-    /* mixer.com */
-    mx: function (id, callback) {
-        process.nextTick(
-            callback,
-            "As of July 2020, Mixer is no longer in service."
-        );
+    /* BitChute */
+    bc: function (id, callback) {
+        BitChute.lookup(id).then(video => {
+            video = new Media(video.id, video.title, video.duration, "bc", video.meta);
+            callback(null, video);
+        }).catch(error => {
+            callback(error.message || error);
+        });
+    },
+
+    /* Odysee */
+    od: function (id, callback) {
+        Odysee.lookup(id).then(video => {
+            video = new Media(video.id, video.title, video.duration, "od", video.meta);
+            callback(null, video);
+        }).catch(error => {
+            callback(error.message || error);
+        });
+    },
+
+    /* BandCamp */
+    bn: function (id, callback) {
+        BandCamp.lookup(id).then(video => {
+            video = new Media(video.id, video.title, video.duration, "bn", video.meta);
+            callback(null, video);
+        }).catch(error => {
+            callback(error.message || error);
+        });
+    },
+
+    /* Niconico */
+    nv: function (id, callback) {
+        Nicovideo.lookup(id).then(video => {
+            video = new Media(video.id, video.title, video.duration, "nv", video.meta);
+            callback(null, video);
+        }).catch(error => {
+            callback(error.message || error);
+        });
     }
 };
 

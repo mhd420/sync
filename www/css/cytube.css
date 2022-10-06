@@ -28,6 +28,11 @@
     padding-right: 5px;
 }
 
+#usercount {
+    white-space: nowrap;
+    flex-grow: 2;
+}
+
 #userlist {
     width: 120px;
     float: left;
@@ -88,6 +93,12 @@
 
     text-align: center;
     font-weight: bold;
+}
+
+#chatheader {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 #chatheader > p, #videowrap-header {
@@ -582,7 +593,7 @@ table td {
 }
 
 #userlisttoggle {
-    padding-top: 2px;
+    padding-bottom: 2px;
 }
 
 .queue_entry {
@@ -651,6 +662,7 @@ input#logout[type="submit"]:hover {
 }
 
 #newmessages-indicator {
+    position: relative;
     margin-top: -30px;
     line-height: 30px;
     height: 30px;

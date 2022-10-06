@@ -1,3 +1,70 @@
+2022-09-21
+==========
+
+**Upgrade intervention required**
+
+This release adds a feature to ban channels, replacing the earlier (hastily
+added) configuration-based `channel-blacklist`.  If you have any entries in
+`channel-blacklist` in your `config.yaml`, you will need to migrate them to the
+new bans table by using a command after upgrading (the ACP web interface hasn't
+been updated for this feature):
+
+    ./bin/admin.js ban-channel <channel-name> <external-reason> <internal-reason>
+
+The external reason will be displayed when users attempt to join the banned
+channel, while the internal reason is only displayed when using the
+`show-channel-ban` command.
+
+You can later use `unban-channel` to remove a ban.  The owner of the banned
+channel can still delete it, but the banned state will persist, so the channel
+cannot be re-registered later.
+
+2022-08-28
+==========
+
+This release integrates Xaekai's added support for Bandcamp, BitChute, Odysee,
+and Nicovideo playback support into the main repository.  The updated support
+for custom fonts and audio tracks in custom media manifests is also included,
+but does not work out of the box -- it requires a separate channel script; this
+may be addressed in the future.
+
+2021-08-14
+==========
+
+CyTube has been upgraded to socket.io v4 (from v2).
+
+**Breaking change:** Newer versions of socket.io require CORS to validate the
+origin initiating the socket connection.  CyTube allows the origins specified in
+the `io.domain` and `https.domain` configuration keys by default, which should
+work for many use cases, however, if you host your website on a different domain
+than the socket connection, you will need to configure the allowed origins (see
+config.template.yaml under `io.cors`).
+
+CyTube enables the `allowEIO3` configuration in socket.io by default, which
+means that existing clients and bots using socket.io-client v2 should continue
+to work.
+
+2021-08-12
+==========
+
+The legacy metrics recorder (`counters.log` file) has been removed.  For over 4
+years now, CyTube has integrated with [Prometheus](https://prometheus.io/),
+which provides a superior way to monitor the application.  Copy
+`conf/example/prometheus.toml` to `conf/prometheus.toml` and edit it to
+configure CyTube's Prometheus support.
+
+2021-08-12
+==========
+
+Due to changes in Soundcloud's authorization scheme, support has been dropped
+from core due to requiring each server owner to register an API key (which is
+currently impossible as they have not accepted new API key registrations for
+*years*).
+
+If you happen to already have an API key registered, or if Soundcloud reopens
+registration at some point in the future, feel free to reach out to me for
+patches to reintroduce support for it.
+
 2020-08-21
 ==========
 

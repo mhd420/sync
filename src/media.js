@@ -39,7 +39,7 @@ Media.prototype = {
                 embed: this.meta.embed,
                 gdrive_subtitles: this.meta.gdrive_subtitles,
                 textTracks: this.meta.textTracks,
-                mixer: this.meta.mixer
+                audioTracks: this.meta.audioTracks
             }
         };
 
@@ -52,6 +52,11 @@ Media.prototype = {
          */
         if (this.type !== "gd" && this.type !== "tc") {
             result.meta.direct = this.meta.direct;
+        }
+
+        // Only save thumbnails for items which can be audio track only
+        if (['bn','cm'].includes(this.type)) {
+            result.meta.thumbnail = this.meta.thumbnail;
         }
 
         return result;

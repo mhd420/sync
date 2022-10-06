@@ -2,6 +2,7 @@ import Config from './config';
 import * as Switches from './switches';
 import { eventlog } from './logger';
 require('source-map-support').install();
+import * as bannedChannels from './cli/banned-channels';
 
 const LOGGER = require('@calzoneman/jsli')('main');
 
@@ -28,10 +29,39 @@ if (!Config.get('debug')) {
     });
 }
 
+async function handleCliCmd(cmd) {
+    try {
+        switch (cmd.command) {
+            case 'ban-channel':
+                return bannedChannels.handleBanChannel(cmd);
+            case 'unban-channel':
+                return bannedChannels.handleUnbanChannel(cmd);
+            case 'show-banned-channel':
+                return bannedChannels.handleShowBannedChannel(cmd);
+            default:
+                throw new Error(`Unrecognized command "${cmd.command}"`);
+        }
+    } catch (error) {
+        return { status: 'error', error: String(error) };
+    }
+}
+
 // TODO: this can probably just be part of servsock.js
 // servsock should also be refactored to send replies instead of
 // relying solely on tailing logs
-function handleLine(line) {
+function handleLine(line, client) {
+    try {
+        let cmd = JSON.parse(line);
+        handleCliCmd(cmd).then(res => {
+            client.write(JSON.stringify(res) + '\n');
+        }).catch(error => {
+            LOGGER.error(`Unexpected error in handleCliCmd: ${error.stack}`);
+            client.write('{"status":"error","error":"internal error"}\n');
+        });
+    } catch (_error) {
+        // eslint no-empty: off
+    }
+
     if (line === '/reload') {
         LOGGER.info('Reloading config');
         try {
@@ -81,9 +111,9 @@ if (Config.get('service-socket.enabled')) {
     const ServiceSocket = require('./servsock');
     const sock = new ServiceSocket();
     sock.init(
-        line => {
+        (line, client) => {
             try {
-                handleLine(line);
+                handleLine(line, client);
             } catch (error) {
                 LOGGER.error(
                     'Error in UNIX socket command handler: %s',

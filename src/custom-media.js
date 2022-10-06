@@ -22,15 +22,21 @@ const SOURCE_CONTENT_TYPES = new Set([
     'application/dash+xml',
     'application/x-mpegURL',
     'audio/aac',
-    'audio/ogg',
+    'audio/mp4',
     'audio/mpeg',
+    'audio/ogg',
+    'audio/opus',
     'video/mp4',
     'video/ogg',
     'video/webm'
 ]);
 
-const LIVE_ONLY_CONTENT_TYPES = new Set([
-    'application/dash+xml'
+const AUDIO_ONLY_CONTENT_TYPES = new Set([
+    'audio/aac',
+    'audio/mp4',
+    'audio/mpeg',
+    'audio/ogg',
+    'audio/opus'
 ]);
 
 export function lookup(url, opts) {
@@ -134,6 +140,7 @@ export function convert(id, data) {
 
     const meta = {
         direct: sources,
+        audioTracks: data.audioTracks,
         textTracks: data.textTracks,
         thumbnail: data.thumbnail, // Currently ignored by Media
         live: !!data.live          // Currently ignored by Media
@@ -163,7 +170,16 @@ export function validate(data) {
     }
 
     validateSources(data.sources, data);
+    validateAudioTracks(data.audioTracks);
     validateTextTracks(data.textTracks);
+    /*
+     * TODO: Xaekai's Octopus subtitle support uses a separate subTracks array
+     * in a slightly different format than textTracks.  That currently requires
+     * a channel script to use, but if that is integrated in core then it needs
+     * to be validated here (and ideally merged with textTracks so there is only
+     * one array).
+     */
+    validateFonts(data.fonts);
 }
 
 function validateSources(sources, data) {
@@ -182,12 +198,8 @@ function validateSources(sources, data) {
                 `unacceptable source contentType "${source.contentType}"`
             );
 
-        if (LIVE_ONLY_CONTENT_TYPES.has(source.contentType) && !data.live)
-            throw new ValidationError(
-                `contentType "${source.contentType}" requires live: true`
-            );
-
-        if (!SOURCE_QUALITIES.has(source.quality))
+        // TODO (Xaekai): This should be allowed
+        if (/*!AUDIO_ONLY_CONTENT_TYPES.has(source.contentType) && */!SOURCE_QUALITIES.has(source.quality))
             throw new ValidationError(`unacceptable source quality "${source.quality}"`);
 
         if (source.hasOwnProperty('bitrate')) {
@@ -197,6 +209,45 @@ function validateSources(sources, data) {
                 throw new ValidationError(
                     'source bitrate must be a non-negative finite number'
                 );
+        }
+    }
+}
+
+function validateAudioTracks(audioTracks) {
+    if (typeof audioTracks === 'undefined') {
+        return;
+    }
+
+    if (!Array.isArray(audioTracks)){
+        throw new ValidationError('audioTracks must be a list');
+    }
+
+    for (let track of audioTracks) {
+        if (typeof track.url !== 'string'){
+            throw new ValidationError('audio track URL must be a string');
+        }
+        validateURL(track.url);
+
+        if (!AUDIO_ONLY_CONTENT_TYPES.has(track.contentType)){
+            throw new ValidationError(
+                `unacceptable audio track contentType "${track.contentType}"`
+            );
+        }
+        if (typeof track.label !== 'string'){
+            throw new ValidationError('audio track label must be a string');
+        }
+        if (!track.label){
+            throw new ValidationError('audio track label must be nonempty');
+        }
+
+        if (typeof track.language !== 'string'){
+            throw new ValidationError('audio track language must be a string');
+        }
+        if (!track.language){
+            throw new ValidationError('audio track language must be nonempty');
+        }
+        if (!/^[a-z]{2,3}$/.test(track.language)){
+            throw new ValidationError('audio track language must be a two or three letter IETF BCP 47 subtag');
         }
     }
 }
@@ -233,6 +284,20 @@ function validateTextTracks(textTracks) {
             else
                 default_count++;
         }
+    }
+}
+
+function validateFonts(fonts) {
+    if (typeof textTracks === 'undefined') {
+        return;
+    }
+
+    if (!Array.isArray(fonts))
+        throw new ValidationError('fonts must be a list of URLs');
+
+    for (let f of fonts) {
+        if (typeof f !== 'string')
+            throw new ValidationError('fonts must be a list of URLs');
     }
 }
 

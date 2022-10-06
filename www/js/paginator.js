@@ -31,10 +31,10 @@
         s = s + this.opts.maxPages < pages ? s : pages - this.opts.maxPages;
         s = s < 0 ? 0 : s;
         if(endcaps) {
-            var li = $("<li/>").appendTo(ul);
+            let li = $("<li/>").appendTo(ul);
             $("<a/>").attr("href", "javascript:void(0)")
                 .html("&laquo;")
-                .click(function () {
+                .on('click', function () {
                     this.loadPage(0);
                 }.bind(this))
                 .appendTo(li);
@@ -43,7 +43,7 @@
                 li.addClass("disabled");
 
             if(s > 0) {
-                var sep = $("<li/>").addClass("disabled")
+                let sep = $("<li/>").addClass("disabled")
                     .appendTo(ul);
                 $("<a/>").attr("href", "javascript:void(0)")
                     .html("&hellip;")
@@ -52,12 +52,12 @@
         }
         for(var i = s; i < s + this.opts.maxPages && i < s + pages; i++) {
             (function (i) {
-            var li = $("<li/>").appendTo(ul);
+            let li = $("<li/>").appendTo(ul);
             if(i == p)
                 li.addClass("active");
             $("<a/>").attr("href", "javascript:void(0)")
                 .text(i + 1)
-                .click(function () {
+                .on('click', function () {
                     this.loadPage(i);
                 }.bind(this))
                 .appendTo(li);
@@ -65,17 +65,17 @@
         }
         if(endcaps) {
             if(s + this.opts.maxPages < pages) {
-                var sep = $("<li/>").addClass("disabled")
+                let sep = $("<li/>").addClass("disabled")
                     .appendTo(ul);
                 $("<a/>").attr("href", "javascript:void(0)")
                     .html("&hellip;")
                     .appendTo(sep);
             }
 
-            var li = $("<li/>").appendTo(ul);
+            let li = $("<li/>").appendTo(ul);
             $("<a/>").attr("href", "javascript:void(0)")
                 .html("&raquo;")
-                .click(function () {
+                .on('click', function () {
                     this.loadPage(pages - 1);
                 }.bind(this))
                 .appendTo(li);

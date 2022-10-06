@@ -9,7 +9,6 @@ import morgan from 'morgan';
 import csrf from './csrf';
 import * as HTTPStatus from './httpstatus';
 import { CSRFError, HTTPError } from '../errors';
-import counters from '../counters';
 import { Summary, Counter } from 'prom-client';
 import session from '../session';
 const verifySessionAsync = require('bluebird').promisify(session.verifySession);
@@ -144,16 +143,13 @@ module.exports = {
         emailConfig,
         emailController,
         captchaConfig,
-        captchaController
+        captchaController,
+        bannedChannelsController
     ) {
         patchExpressToHandleAsync();
         const chanPath = Config.get('channel-path');
 
         initPrometheus(app);
-        app.use((req, res, next) => {
-            counters.add("http:request", 1);
-            next();
-        });
         require('./middleware/x-forwarded-for').initialize(app, webConfig);
         app.use(bodyParser.urlencoded({
             extended: false,
@@ -199,7 +195,12 @@ module.exports = {
             LOGGER.info('Enabled express-minify for CSS and JS');
         }
 
-        require('./routes/channel')(app, ioConfig, chanPath);
+        require('./routes/channel')(
+            app,
+            ioConfig,
+            chanPath,
+            async name => bannedChannelsController.getBannedChannel(name)
+        );
         require('./routes/index')(app, channelIndex, webConfig.getMaxIndexEntries());
         require('./routes/api')(app, channelIndex);
         require('./routes/socketconfig')(app, clusterClient);
@@ -218,6 +219,7 @@ module.exports = {
         require('./acp').init(app, ioConfig);
         require('../google2vtt').attach(app);
         require('./routes/google_drive_userscript')(app);
+        require('./routes/iframe')(app);
 
         app.use(serveStatic(path.join(__dirname, '..', '..', 'www'), {
             maxAge: webConfig.getCacheTTL()

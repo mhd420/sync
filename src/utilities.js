@@ -177,7 +177,7 @@
         };
     },
 
-    root.formatLink = function (id, type, meta) {
+    root.formatLink = function (id, type, _meta) {
         switch (type) {
             case "yt":
                 return "https://youtu.be/" + id;
@@ -193,16 +193,10 @@
                 return "https://twitch.tv/" + id;
             case "rt":
                 return id;
-            case "im":
-                return "https://imgur.com/a/" + id;
-            case "us":
-                return "https://ustream.tv/channel/" + id;
             case "gd":
                 return "https://docs.google.com/file/d/" + id;
             case "fi":
                 return id;
-            case "hb":
-                return "https://www.smashcast.tv/" + id;
             case "hl":
                 return id;
             case "sb":
@@ -213,12 +207,22 @@
                 return id;
             case "te":
                 return "http://terd.work/live/" + id + ".flv";
-            case "mx":
-                if (meta !== null) {
-                    return `https://mixer.com/${meta.mixer.channelToken}`;
-                } else {
-                    return `https://mixer.com/${id}`;
-                }
+            case "pt": {
+                const [domain,uuid] = id.split(';');
+                return `https://${domain}/videos/watch/${uuid}`;
+            }
+            case "bc":
+                return `https://www.bitchute.com/video/${id}/`;
+            case "bn": {
+                const [artist,track] = id.split(';');
+                return `https://${artist}.bandcamp.com/track/${track}`;
+            }
+            case "od": {
+                const [user,video] = id.split(';');
+                return `https://odysee.com/@${user}/${video}`;
+            }
+            case "nv":
+                return `https://www.nicovideo.jp/watch/${id}`;
             default:
                 return "";
         }
@@ -228,13 +232,9 @@
         switch (type) {
             case "li":
             case "tw":
-            case "us":
             case "rt":
             case "cu":
-            case "im":
-            case "hb":
             case "hl":
-            case "mx":
             case "te":
                 return true;
             default:

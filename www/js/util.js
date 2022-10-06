@@ -13,7 +13,7 @@ function makeAlert(title, text, klass, textOnly) {
     $("<br/>").prependTo(al);
     $("<strong/>").text(title).prependTo(al);
     $("<button/>").addClass("close pull-right").html("&times;")
-        .click(function() {
+        .on('click', function() {
             al.hide("fade", function() {
                 wrap.remove();
             });
@@ -33,21 +33,16 @@ function formatURL(data) {
         case "sc":
             return data.id;
         case "li":
-            return "https://livestream.com/" + data.id;
+            const [account,event] = data.id.split(';');
+            return `https://livestream.com/accounts/${account}/events/${event}`;
         case "tw":
             return "https://twitch.tv/" + data.id;
         case "rt":
             return data.id;
-        case "im":
-            return "https://imgur.com/a/" + data.id;
-        case "us":
-            return "https://ustream.tv/channel/" + data.id;
         case "gd":
             return "https://docs.google.com/file/d/" + data.id;
         case "fi":
             return data.id;
-        case "hb":
-            return "https://www.smashcast.tv/" + data.id;
         case "hl":
             return data.id;
         case "sb":
@@ -56,10 +51,26 @@ function formatURL(data) {
             return "https://clips.twitch.tv/" + data.id;
         case "cm":
             return data.id;
-        case "mx":
-            return "https://mixer.com/" + data.meta.mixer.channelToken;
         case "te":
             return "rtmp://terd.work/live/" + data.id;
+        case "cu":
+            return data.meta.embed.src;
+        case "pt":
+            if(data.meta.embed.onlyLong){
+                return `https://${data.meta.embed.domain}/videos/watch/${data.meta.embed.uuid}`;
+            } else {
+                return `https://${data.meta.embed.domain}/w/${data.meta.embed.short}`;
+            }
+        case "bc":
+            return `https://www.bitchute.com/video/${data.id}/`;
+        case "bn":
+            const [artist,track] = data.id.split(';');
+            return `https://${artist}.bandcamp.com/track/${track}`;
+        case "od":
+            const [user,video] = data.id.split(';');
+            return `https://odysee.com/@${user}/${video}`;
+        case "nv":
+            return `https://www.nicovideo.jp/watch/${data.id}`;
         default:
             return "#";
     }
@@ -127,7 +138,7 @@ function formatUserlistItem(div) {
     name.unbind("mousemove");
     name.unbind("mouseleave");
 
-    name.mouseenter(function(ev) {
+    name.on('mouseenter', function(ev) {
         if (profile)
             profile.remove();
 
@@ -160,7 +171,7 @@ function formatUserlistItem(div) {
         if ($("body").hasClass("synchtube")) horiz -= profile.outerWidth();
         profile.css("left", horiz + "px")
     });
-    name.mousemove(function(ev) {
+    name.on('mousemove', function(ev) {
         var top = ev.clientY + 5;
         var horiz = ev.clientX;
 
@@ -168,7 +179,7 @@ function formatUserlistItem(div) {
         profile.css("left", horiz + "px")
             .css("top", top + "px");
     });
-    name.mouseleave(function() {
+    name.on('mouseleave', function() {
         profile.remove();
     });
     var icon = div.children()[0];
@@ -216,26 +227,28 @@ function addUserDropdown(entry) {
     var btngroup = $("<div/>").addClass("btn-group-vertical").appendTo(menu);
 
     /* ignore button */
-    var ignore = $("<button/>").addClass("btn btn-xs btn-default")
-        .appendTo(btngroup)
-        .click(function () {
-            if(IGNORED.indexOf(name) == -1) {
-                ignore.text("Unignore User");
-                IGNORED.push(name);
-                entry.addClass("userlist-ignored");
-            } else {
-                ignore.text("Ignore User");
-                IGNORED.splice(IGNORED.indexOf(name), 1);
-                entry.removeClass("userlist-ignored");
-            }
-            setOpt("ignorelist", IGNORED);
-        });
-    if(IGNORED.indexOf(name) == -1) {
-        entry.removeClass("userlist-ignored");
-        ignore.text("Ignore User");
-    } else {
-        entry.addClass("userlist-ignored");
-        ignore.text("Unignore User");
+    if (name !== CLIENT.name) {
+        var ignore = $("<button/>").addClass("btn btn-xs btn-default")
+            .appendTo(btngroup)
+            .on('click', function () {
+                if(IGNORED.indexOf(name) == -1) {
+                    ignore.text("Unignore User");
+                    IGNORED.push(name);
+                    entry.addClass("userlist-ignored");
+                } else {
+                    ignore.text("Ignore User");
+                    IGNORED.splice(IGNORED.indexOf(name), 1);
+                    entry.removeClass("userlist-ignored");
+                }
+                setOpt("ignorelist", IGNORED);
+            });
+        if(IGNORED.indexOf(name) == -1) {
+            entry.removeClass("userlist-ignored");
+            ignore.text("Ignore User");
+        } else {
+            entry.addClass("userlist-ignored");
+            ignore.text("Unignore User");
+        }
     }
 
     /* pm button */
@@ -243,7 +256,7 @@ function addUserDropdown(entry) {
         var pm = $("<button/>").addClass("btn btn-xs btn-default")
             .text("Private Message")
             .appendTo(btngroup)
-            .click(function () {
+            .on('click', function () {
                 initPm(name).find(".panel-heading").click();
                 menu.hide();
             });
@@ -255,14 +268,14 @@ function addUserDropdown(entry) {
             .appendTo(btngroup);
         if(leader) {
             ldr.text("Remove Leader");
-            ldr.click(function () {
+            ldr.on('click', function () {
                 socket.emit("assignLeader", {
                     name: ""
                 });
             });
         } else {
             ldr.text("Give Leader");
-            ldr.click(function () {
+            ldr.on('click', function () {
                 socket.emit("assignLeader", {
                     name: name
                 });
@@ -274,7 +287,7 @@ function addUserDropdown(entry) {
     if(hasPermission("kick")) {
         $("<button/>").addClass("btn btn-xs btn-default")
             .text("Kick")
-            .click(function () {
+            .on('click', function () {
                 var reason = prompt("Enter kick reason (optional)");
                 if (reason === null) {
                     return;
@@ -291,7 +304,7 @@ function addUserDropdown(entry) {
     if (hasPermission("mute")) {
         var mute = $("<button/>").addClass("btn btn-xs btn-default")
             .text("Mute")
-            .click(function () {
+            .on('click', function () {
                 socket.emit("chatMsg", {
                     msg: "/mute " + name,
                     meta: {}
@@ -300,7 +313,7 @@ function addUserDropdown(entry) {
             .appendTo(btngroup);
         var smute = $("<button/>").addClass("btn btn-xs btn-default")
             .text("Shadow Mute")
-            .click(function () {
+            .on('click', function () {
                 socket.emit("chatMsg", {
                     msg: "/smute " + name,
                     meta: {}
@@ -309,7 +322,7 @@ function addUserDropdown(entry) {
             .appendTo(btngroup);
         var unmute = $("<button/>").addClass("btn btn-xs btn-default")
             .text("Unmute")
-            .click(function () {
+            .on('click', function () {
                 socket.emit("chatMsg", {
                     msg: "/unmute " + name,
                     meta: {}
@@ -328,7 +341,7 @@ function addUserDropdown(entry) {
     if(hasPermission("ban")) {
         $("<button/>").addClass("btn btn-xs btn-default")
             .text("Name Ban")
-            .click(function () {
+            .on('click', function () {
                 var reason = prompt("Enter ban reason (optional)");
                 if (reason === null) {
                     return;
@@ -341,7 +354,7 @@ function addUserDropdown(entry) {
             .appendTo(btngroup);
         $("<button/>").addClass("btn btn-xs btn-default")
             .text("IP Ban")
-            .click(function () {
+            .on('click', function () {
                 var reason = prompt("Enter ban reason (optional)");
                 if (reason === null) {
                     return;
@@ -523,7 +536,7 @@ function addQueueButtons(li) {
     if(hasPermission("playlistjump")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-play")
             .html("<span class='glyphicon glyphicon-play'></span>Play")
-            .click(function() {
+            .on('click', function() {
                 socket.emit("jumpTo", li.data("uid"));
             })
             .appendTo(menu);
@@ -532,7 +545,7 @@ function addQueueButtons(li) {
     if(hasPermission("playlistmove")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-next")
             .html("<span class='glyphicon glyphicon-share-alt'></span>Queue Next")
-            .click(function() {
+            .on('click', function() {
                 socket.emit("moveMedia", {
                     from: li.data("uid"),
                     after: PL_CURRENT
@@ -545,7 +558,7 @@ function addQueueButtons(li) {
         var tempstr = li.data("temp")?"Make Permanent":"Make Temporary";
         $("<button/>").addClass("btn btn-xs btn-default qbtn-tmp")
             .html("<span class='glyphicon glyphicon-flag'></span>" + tempstr)
-            .click(function() {
+            .on('click', function() {
                 socket.emit("setTemp", {
                     uid: li.data("uid"),
                     temp: !li.data("temp")
@@ -557,7 +570,7 @@ function addQueueButtons(li) {
     if(hasPermission("playlistdelete")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-delete")
             .html("<span class='glyphicon glyphicon-trash'></span>Delete")
-            .click(function() {
+            .on('click', function() {
                 socket.emit("delete", li.data("uid"));
             })
             .appendTo(menu);
@@ -638,11 +651,11 @@ function showUserOptions() {
 
     $("#us-synch").prop("checked", USEROPTS.synch);
     $("#us-synch-accuracy").val(USEROPTS.sync_accuracy);
-    $("#us-wmode-transparent").prop("checked", USEROPTS.wmode_transparent);
     $("#us-hidevideo").prop("checked", USEROPTS.hidevid);
     $("#us-playlistbuttons").prop("checked", USEROPTS.qbtn_hide);
     $("#us-oldbtns").prop("checked", USEROPTS.qbtn_idontlikechange);
     $("#us-default-quality").val(USEROPTS.default_quality || "auto");
+    $("#us-peertube").prop("checked", USEROPTS.peertube_risk);
 
     $("#us-chat-timestamp").prop("checked", USEROPTS.show_timestamps);
     $("#us-sort-rank").prop("checked", USEROPTS.sort_rank);
@@ -661,7 +674,7 @@ function showUserOptions() {
 
     formatScriptAccessPrefs();
 
-    $("a[href='#us-general']").click();
+    $("a[href='#us-general']").trigger("click");
     $("#useroptions").modal();
 }
 
@@ -675,11 +688,11 @@ function saveUserOptions() {
 
     USEROPTS.synch                = $("#us-synch").prop("checked");
     USEROPTS.sync_accuracy        = parseFloat($("#us-synch-accuracy").val()) || 2;
-    USEROPTS.wmode_transparent    = $("#us-wmode-transparent").prop("checked");
     USEROPTS.hidevid              = $("#us-hidevideo").prop("checked");
     USEROPTS.qbtn_hide            = $("#us-playlistbuttons").prop("checked");
     USEROPTS.qbtn_idontlikechange = $("#us-oldbtns").prop("checked");
     USEROPTS.default_quality      = $("#us-default-quality").val();
+    USEROPTS.peertube_risk        = $("#us-peertube").prop("checked");
 
     USEROPTS.show_timestamps      = $("#us-chat-timestamp").prop("checked");
     USEROPTS.sort_rank            = $("#us-sort-rank").prop("checked");
@@ -750,7 +763,7 @@ function applyOpts() {
             .text("Send")
             .attr("id", "chatbtn")
             .appendTo($("#chatwrap"));
-        btn.click(function() {
+        btn.on('click', function() {
             if($("#chatline").val().trim()) {
                 socket.emit("chatMsg", {
                     msg: $("#chatline").val(),
@@ -807,7 +820,7 @@ function showPollMenu() {
     $("<button/>").addClass("btn btn-sm btn-danger pull-right")
         .text("Cancel")
         .appendTo(menu)
-        .click(function() {
+        .on('click', function() {
             menu.remove();
         });
 
@@ -837,6 +850,12 @@ function showPollMenu() {
     var hidden = $("<input/>").attr("type", "checkbox")
         .prependTo(lbl);
 
+    var retainVotesOuter = $("<div/>").addClass("checkbox").appendTo(menu);
+    var retainVotesLbl = $("<label/>").text("Keep poll vote after user leaves")
+        .appendTo(retainVotesOuter);
+    var retainVotes = $("<input/>").attr("type", "checkbox")
+        .prependTo(retainVotesLbl);
+
     $("<strong/>").text("Options").appendTo(menu);
 
     var addbtn = $("<button/>").addClass("btn btn-sm btn-default")
@@ -858,7 +877,7 @@ function showPollMenu() {
     $("<button/>").addClass("btn btn-default btn-block")
         .text("Open Poll")
         .appendTo(menu)
-        .click(function() {
+        .on('click', function() {
             var t = timeout.val().trim();
             if (t) {
                 try {
@@ -885,6 +904,7 @@ function showPollMenu() {
                 title: title.val(),
                 opts: opts,
                 obscured: hidden.prop("checked"),
+                retainVotes: retainVotes.prop("checked"),
                 timeout: t
             }, function ack(result) {
                 if (result.error) {
@@ -1030,7 +1050,7 @@ function handlePermissionChange() {
             $("<button/>").addClass("btn btn-primary")
                 .text("Dismiss")
                 .appendTo(al.find(".alert"))
-                .click(function() {
+                .on('click', function() {
                     USEROPTS.first_visit = false;
                     storeOpts();
                     al.hide("fade", function() {
@@ -1071,7 +1091,7 @@ function handlePermissionChange() {
             $("<button/>").addClass("btn btn-danger pull-right")
                 .text("End Poll")
                 .insertAfter(poll.find(".close"))
-                .click(function() {
+                .on('click', function() {
                     socket.emit("closePoll");
                 });
         }
@@ -1086,6 +1106,11 @@ function handlePermissionChange() {
     }
 
     $("#chatline").attr("disabled", !hasPermission("chat"));
+    if (!hasPermission("chat")) {
+        $("#chatline").attr("placeholder", "Chat permissions are restricted on this channel");
+    } else {
+        $("#chatline").attr("placeholder", "");
+    }
     rebuildPlaylist();
 }
 
@@ -1122,7 +1147,7 @@ function addLibraryButtons(li, item, source) {
         if(hasPermission("playlistnext")) {
             $("<button/>").addClass("btn btn-xs btn-default")
                 .text("Next")
-                .click(function() {
+                .on('click', function() {
                     socket.emit("queue", {
                         id: id,
                         pos: "next",
@@ -1134,7 +1159,7 @@ function addLibraryButtons(li, item, source) {
         }
         $("<button/>").addClass("btn btn-xs btn-default")
             .text("End")
-            .click(function() {
+            .on('click', function() {
                 socket.emit("queue", {
                     id: id,
                     pos: "end",
@@ -1147,7 +1172,7 @@ function addLibraryButtons(li, item, source) {
     if(hasPermission("deletefromchannellib") && source === "library") {
         $("<button/>").addClass("btn btn-xs btn-danger")
             .html("<span class='glyphicon glyphicon-trash'></span>")
-            .click(function() {
+            .on('click', function() {
                 socket.emit("uncache", {
                     id: id
                 });
@@ -1264,245 +1289,172 @@ function playlistMove(from, after, cb) {
     }
 }
 
-function extractQueryParam(query, param) {
-    var params = {};
-    query.split("&").forEach(function (kv) {
-        kv = kv.split("=");
-        params[kv[0]] = kv[1];
-    });
-
-    return params[param];
-}
 
 function parseMediaLink(url) {
-    if(typeof url != "string") {
+    function parseShortCode(url){
+        const type = url.slice(0,2);
+        let id = url.slice(3);
+
+        switch(type){
+            // So we still trim DailyMotion URLs
+            case 'dm':
+                return { type, id: id.match(/([^\?&#_]+)/)[1] };
+            // Raw files need to keep the query string
+            case 'fi':
+            case 'cm':
+                return { type, id };
+            // Generic for the rest.
+            default:
+                return { type, id: id.match(/([^\?&#]+)/)[1] };
+        }
+    }
+    const indeterminable = ()=>{
+        return new Error(
+            'Could not determine video type. ' +
+            'Check https://git.io/fjtOK for a list of supported media providers.'
+        );
+    }
+    const livestream = ()=>{
+        return new Error(
+            'This format of Livestream.com link is not supported. ' +
+            'You must use one that has the numeric account ID.'
+        );
+    }
+
+    if(typeof url != 'string') {
         return {
             id: null,
             type: null
         };
     }
-    url = url.trim();
-    url = url.replace("feature=player_embedded&", "");
-
-    
-    if(url.indexOf("rtmp://") == 0) {
-        return {
-            id: url,
-            type: "rt"
-        };
-    }
-    
-    var m;
-    if ((m = url.match(/http:\/\/terd\.work\/live\/(\w+)/)))
-    {
-        return {
-            id: m[1],
-            type: "te"
-        };
+    /*  Shorthand URIs  */
+    if(url.match(/^[a-z]{2}:/)){
+        return parseShortCode(url);
     }
 
-    if((m = url.match(/youtube\.com\/watch\?([^#]+)/))) {
-        return {
-            id: extractQueryParam(m[1], "v"),
-            type: "yt"
-        };
+    var data
+    try {
+        data = new URL(url);
+    } catch(err){
+        throw indeterminable();
     }
 
-    if((m = url.match(/youtu\.be\/([^\?&#]+)/))) {
-        return {
-            id: m[1],
-            type: "yt"
-        };
+    if(data.protocol == 'rtmp:') {
+        return { type: 'rt', id: url };
+    }
+    if (data.pathname.match(/\.m3u8$/)) {
+        return { type: 'hl', id: url };
+    }
+    if (data.pathname.match(/\.json$/)) {
+        return { type: 'cm', id: url };
     }
 
-    if((m = url.match(/youtube\.com\/playlist\?([^#]+)/))) {
-        return {
-            id: extractQueryParam(m[1], "list"),
-            type: "yp"
-        };
+    switch(data.hostname.replace('www.', '')){
+        case 'terd.work':
+            if (data.pathname.startsWith('/live/')){
+                return { type: 'te', id: data.pathname.slice(6) }
+            }
+        case 'youtube.com':
+            if(data.pathname == '/watch'){
+                return { type: 'yt', id: data.searchParams.get('v') }
+            }
+            if(data.pathname.startsWith('/shorts/')){
+                return { type: 'yt', id: data.pathname.slice(8,19) }
+            }
+            if(data.pathname == '/playlist'){
+                return { type: 'yp', id: data.searchParams.get('list') }
+            }
+        case 'youtu.be':
+            return { type: 'yt', id: data.pathname.slice(1) }
+
+        case 'twitch.tv':
+            if(data.pathname.includes('/clip/')){
+                return { type: 'tc', id: data.pathname.split('/').pop() }
+            }
+            if(data.pathname.startsWith('/videos/')){
+                return { type: 'tv', id: `v${data.pathname.split('/').pop()}` }
+            }
+            return { type: 'tw', id: data.pathname.slice(1) }
+        case 'clips.twitch.tv':
+            return { type: 'tc', id: data.pathname.slice(1) }
+
+        case 'livestream.com':
+            if(data.pathname.startsWith('/accounts/')){
+                const pattern = new RegExp('/accounts/(?<account>[0-9]+)/events/(?<event>[0-9]+)');
+                const m = data.pathname.match(pattern);
+                if(m.groups.account && m.groups.event){
+                    return { type: 'li', id: `${m.groups.account};${m.groups.event}` };
+                }
+            } else {
+                throw livestream();
+            }
+
+        case 'vimeo.com':
+            return { type: 'vi', id: data.pathname.slice(1) }
+        case 'dailymotion.com':
+            return { type: 'dm', id: data.pathname.slice('7') }
+        case 'soundcloud.com':
+            return { type: 'sc', id: url }
+        case 'streamable.com':
+            return { type: 'sb', id: data.pathname.slice(1) }
+
+        case 'docs.google.com':
+        case 'drive.google.com':
+            if(data.pathname.startsWith('/file/')){
+                return { type: 'gd', id: data.pathname.slice('8').split('/').shift() }
+            }
+            if(data.pathname == '/open'){
+                return { type: 'gd', id: data.searchParams.get('id') }
+            }
+
+        case 'bitchute.com':
+            if(data.pathname.startsWith('/video/')){
+                return { type: 'bc', id: `${data.pathname.slice(7).split('/').shift()}` }
+            }
+
+        case 'nicovideo.jp':
+            if(data.pathname.startsWith('/watch/')){
+                return { type: 'nv', id: `${data.pathname.slice(7).split('/').shift()}` }
+            }
+
+        case 'odysee.com':
+            const format = new RegExp('/@(?<user>[^:]+)(?::\\w)?/(?<video>[^:]+)');
+            if(format.test(data.pathname)){
+                const {user,video} = (data.pathname.match(format)['groups']);
+                return { type: 'od', id: `${user};${video}` }
+            }
     }
 
-    if ((m = url.match(/clips\.twitch\.tv\/([A-Za-z]+)/))) {
-        return {
-            id: m[1],
-            type: "tc"
-        };
+    if(data.hostname.endsWith('.bandcamp.com') && data.pathname.startsWith('/track/')){
+        const artist = data.hostname.replace('.bandcamp.com','')
+        const track = data.pathname.replace('/track/','')
+        return { type: 'bn', id: `${artist};${track}` }
     }
 
-    // #790
-    if ((m = url.match(/twitch\.tv\/(?:.*?)\/clip\/([A-Za-z]+)/))) {
-        return {
-            id: m[1],
-            type: "tc"
+    /* PeerTubes */
+    if(data.pathname.match('^/w/|^/videos/watch/')){
+        const regLong = [8, 4, 4, 4, 12].map(x => `[0-9a-f]{${x}}`).join('-');
+        const regShort = '[a-zA-Z0-9]{22}';
+        const pattern = new RegExp(`(?:/w/|/videos/watch/)(?:(?<short>${regShort})|(?<long>${regLong}))`);
+        if((m = data.pathname.match(pattern))) {
+            return {
+                id: `${data.hostname};${m.groups.short || m.groups.long}`,
+                type: "pt"
+            };
         }
     }
 
-    if((m = url.match(/twitch\.tv\/(?:.*?)\/([cv])\/(\d+)/))) {
-        return {
-            id: m[1] + m[2],
-            type: "tv"
-        };
-    }
-
-    /**
-     * 2017-02-23
-     * Twitch changed their URL pattern for recorded videos, apparently.
-     * https://github.com/calzoneman/sync/issues/646
-     */
-    if((m = url.match(/twitch\.tv\/videos\/(\d+)/))) {
-        return {
-            id: "v" + m[1],
-            type: "tv"
-        };
-    }
-
-    if((m = url.match(/twitch\.tv\/([\w-]+)/))) {
-        return {
-            id: m[1],
-            type: "tw"
-        };
-    }
-
-    if((m = url.match(/livestream\.com\/([^\?&#]+)/))) {
-        return {
-            id: m[1],
-            type: "li"
-        };
-    }
-
-    if((m = url.match(/ustream\.tv\/([^\?&#]+)/))) {
-        return {
-            id: m[1],
-            type: "us"
-        };
-    }
-
-    if ((m = url.match(/(?:hitbox|smashcast)\.tv\/([^\?&#]+)/))) {
-        return {
-            id: m[1],
-            type: "hb"
-        };
-    }
-
-    if((m = url.match(/vimeo\.com\/([^\?&#]+)/))) {
-        return {
-            id: m[1],
-            type: "vi"
-        };
-    }
-
-    if((m = url.match(/dailymotion\.com\/video\/([^\?&#_]+)/))) {
-        return {
-            id: m[1],
-            type: "dm"
-        };
-    }
-
-    if((m = url.match(/imgur\.com\/a\/([^\?&#]+)/))) {
-        return {
-            id: m[1],
-            type: "im"
-        };
-    }
-
-    if((m = url.match(/soundcloud\.com\/([^\?&#]+)/))) {
+    /* Raw file (server will check) */
+    if (data.protocol.match(/^http/)) {
         return {
             id: url,
-            type: "sc"
-        };
-    }
-
-    if ((m = url.match(/(?:docs|drive)\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)) ||
-        (m = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/))) {
-        return {
-            id: m[1],
-            type: "gd"
-        };
-    }
-
-    // Deprecated as of December 2017
-    if ((m = url.match(/vid\.me\/embedded\/([\w-]+)/)) ||
-        (m = url.match(/vid\.me\/([\w-]+)/))) {
-        return {
-            id: m[1],
-            type: "vm"
-        };
-    }
-
-    if ((m = url.match(/(.*\.m3u8)/))) {
-        return {
-            id: url,
-            type: "hl"
-        };
-    }
-
-    if((m = url.match(/streamable\.com\/([\w-]+)/))) {
-        return {
-            id: m[1],
-            type: "sb"
-        };
-    }
-
-    // Deprecated as of July 2020
-    if ((m = url.match(/\bmixer\.com\/([\w-]+)/))) {
-        return {
-            id: m[1],
-            type: "mx"
-        };
-    }
-
-    /*  Shorthand URIs  */
-    // So we still trim DailyMotion URLs
-    if((m = url.match(/^dm:([^\?&#_]+)/))) {
-        return {
-            id: m[1],
-            type: "dm"
-        };
-    }
-    // Raw files need to keep the query string
-    if ((m = url.match(/^fi:(.*)/))) {
-        return {
-            id: m[1],
             type: "fi"
         };
     }
-    if ((m = url.match(/^cm:(.*)/))) {
-        return {
-            id: m[1],
-            type: "cm"
-        };
-    }
-    // Generic for the rest.
-    if ((m = url.match(/^([a-z]{2}):([^\?&#]+)/))) {
-        return {
-            id: m[2],
-            type: m[1]
-        };
-    }
 
-    /* Raw file */
-    var tmp = url.split("?")[0];
-    if (tmp.match(/^https?:\/\//)) {
-        if (tmp.match(/\.json$/)) {
-            // Custom media manifest format
-            return {
-                id: url,
-                type: "cm"
-            };
-        } else {
-            // Assume raw file (server will check)
-            return {
-                id: url,
-                type: "fi"
-            };
-        }
-    }
-
-    throw new Error(
-        'Could not determine video type.  Check https://git.io/fjtOK for a list ' +
-        'of supported media providers.'
-    );
+    throw indeterminable();
 }
+
 
 function sendVideoUpdate() {
     if (!CLIENT.leader) {
@@ -1617,6 +1569,14 @@ function addChatMessage(data) {
     if (data.meta.shadow && !USEROPTS.show_shadowchat) {
         return;
     }
+    // This is so we discard repeated messages
+    // which become annoying when the user is experiencing repeated socketio reconnects
+    if (data.time < LASTCHAT.time) {
+        return;
+    } else {
+        LASTCHAT.time = data.time;
+    }
+
     var msgBuf = $("#messagebuffer");
     var div = formatChatMessage(data, LASTCHAT);
     // Incoming: a bunch of crap for the feature where if you hover over
@@ -1624,10 +1584,10 @@ function addChatMessage(data) {
     var safeUsername = data.username.replace(/[^\w-]/g, '\\$');
     div.addClass("chat-msg-" + safeUsername);
     div.appendTo(msgBuf);
-    div.mouseover(function() {
+    div.on('mouseover', function() {
         $(".chat-msg-" + safeUsername).addClass("nick-hover");
     });
-    div.mouseleave(function() {
+    div.on('mouseleave', function() {
         $(".nick-hover").removeClass("nick-hover");
     });
     var oldHeight = msgBuf.prop("scrollHeight");
@@ -1647,7 +1607,7 @@ function addChatMessage(data) {
             $("<span/>").text("New Messages Below").appendTo(bgHack);
             $("<span/>").addClass("glyphicon glyphicon-chevron-down")
                     .appendTo(bgHack);
-            newMessageDiv.click(function () {
+            newMessageDiv.on('click', function () {
                 SCROLLCHAT = true;
                 scrollChat();
             });
@@ -1890,19 +1850,19 @@ function chatOnly() {
     $("<span/>").addClass("label label-default pull-right pointer")
         .text("User Options")
         .appendTo($("#chatheader"))
-        .click(showUserOptions);
+        .on('click', showUserOptions);
     $("<span/>").addClass("label label-default pull-right pointer")
         .attr("id", "showchansettings")
         .text("Channel Settings")
         .appendTo($("#chatheader"))
-        .click(function () {
+        .on('click', function () {
             $("#channeloptions").modal();
         });
     $("<span/>").addClass("label label-default pull-right pointer")
         .text("Emote List")
         .appendTo($("#chatheader"))
-        .click(function () {
-            EMOTELIST.show();
+        .on('click', function () {
+            EMOTELISTMODAL.modal();
         });
     setVisible("#showchansettings", CLIENT.rank >= 2);
 
@@ -1945,7 +1905,7 @@ function handleVideoResize() {
     else intv = setInterval(resize, 500);
 }
 
-$(window).resize(handleWindowResize);
+$(window).on('resize', handleWindowResize);
 handleWindowResize();
 
 function removeVideo(event) {
@@ -2082,7 +2042,7 @@ function genPermissionsEditor() {
     var sgroupinner = $("<div/>").addClass("col-sm-8 col-sm-offset-4").appendTo(sgroup);
     var submit = $("<button/>").addClass("btn btn-primary").appendTo(sgroupinner);
     submit.text("Save");
-    submit.click(function() {
+    submit.on('click', function() {
         var perms = {};
         form.find("select").each(function() {
             perms[$(this).data("key")] = parseFloat($(this).val());
@@ -2112,16 +2072,7 @@ function waitUntilDefined(obj, key, fn) {
     fn();
 }
 
-/*
-    God I hate supporting IE11
-    https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Default_parameters
-    https://caniuse.com/#search=default%20function
-
-    This would be the ideal:
-    function chatDialog(div, zin = "auto") {
-*/
-function chatDialog(div, zin) {
-    if(!zin){ zin = 'auto'; }
+function chatDialog(div, zin = 'auto') {
     var parent = $("<div/>").addClass("profile-box")
         .css({
             padding: "10px",
@@ -2150,7 +2101,7 @@ function errDialog(err) {
     $("<button/>").addClass("btn btn-xs btn-default")
         .css("width", "100%")
         .text("OK")
-        .click(function () { div.remove(); })
+        .on('click', function () { div.remove(); })
         .appendTo(div);
     var cw = $("#chatwrap").width();
     var ch = $("#chatwrap").height();
@@ -2247,7 +2198,7 @@ function queueMessage(data, type) {
                     .text(data.link)
                     .appendTo(morelinks);
                 $("<br/>").appendTo(morelinks);
-                tag.click(function () {
+                tag.on('click', function () {
                     morelinks.toggle();
                 });
             }
@@ -2395,7 +2346,7 @@ function formatCSModList() {
                 .text(r.name)
                 .appendTo(li);
             if (r.rank !== entry.rank) {
-                a.click(function () {
+                a.on('click', function () {
                     socket.emit("setChannelRank", {
                         name: entry.name,
                         rank: r.rank
@@ -2452,7 +2403,7 @@ function formatCSBanlist() {
         }
         var unban = $("<button/>").addClass("btn btn-xs btn-danger")
             .appendTo($("<td/>").appendTo(tr));
-        unban.click(function () {
+        unban.on('click', function () {
             socket.emit("unban", {
                 id: entry.id,
                 name: entry.name
@@ -2476,7 +2427,7 @@ function formatCSBanlist() {
             $("<span/>").addClass("glyphicon glyphicon-list").appendTo(showmore);
             showmore.appendTo(first.find("td")[1]);
 
-            showmore.click(function () {
+            showmore.on('click', function () {
                 if (showmore.data("elems")) {
                     showmore.data("elems").forEach(function (e) {
                         e.remove();
@@ -2529,7 +2480,7 @@ function formatCSChatFilterList() {
         var del = $("<button/>").addClass("btn btn-xs btn-danger")
             .appendTo(controlgroup);
         $("<span/>").addClass("glyphicon glyphicon-trash").appendTo(del);
-        del.click(function () {
+        del.on('click', function () {
             socket.emit("removeFilter", f);
         });
         var name = $("<code/>").text(f.name).appendTo($("<td/>").appendTo(tr));
@@ -2537,7 +2488,7 @@ function formatCSChatFilterList() {
         var active = $("<input/>").attr("type", "checkbox")
             .prop("checked", f.active)
             .appendTo(activetd)
-            .change(function () {
+            .on('change', function () {
                 f.active = $(this).prop("checked");
                 socket.emit("updateFilter", f);
             });
@@ -2552,7 +2503,7 @@ function formatCSChatFilterList() {
             }
         };
 
-        control.click(function () {
+        control.on('click', function () {
             if (control.data("editor")) {
                 return reset();
             }
@@ -2587,7 +2538,7 @@ function formatCSChatFilterList() {
                 .attr("title", "Save changes")
                 .insertAfter(control);
             $("<span/>").addClass("glyphicon glyphicon-floppy-save").appendTo(save);
-            save.click(function () {
+            save.on('click', function () {
                 f.source = regex.val();
                 var entcheck = checkEntitiesInStr(f.source);
                 if (entcheck) {
@@ -2671,7 +2622,7 @@ function formatUserPlaylistList() {
             $("<button/>").addClass("btn btn-xs btn-default")
                 .text("End")
                 .appendTo(btns)
-                .click(function () {
+                .on('click', function () {
                     socket.emit("queuePlaylist", {
                         name: pl.name,
                         pos: "end",
@@ -2684,7 +2635,7 @@ function formatUserPlaylistList() {
             $("<button/>").addClass("btn btn-xs btn-default")
                 .text("Next")
                 .prependTo(btns)
-                .click(function () {
+                .on('click', function () {
                     socket.emit("queuePlaylist", {
                         name: pl.name,
                         pos: "next",
@@ -2697,7 +2648,7 @@ function formatUserPlaylistList() {
             .html("<span class='glyphicon glyphicon-trash'></span>")
             .attr("title", "Delete playlist")
             .appendTo(btns)
-            .click(function () {
+            .on('click', function () {
                 var really = confirm("Are you sure you want to delete" +
                     " this playlist? This cannot be undone.");
                 if (!really) {
@@ -2784,14 +2735,14 @@ function initPm(user) {
     var title = $("<div/>").addClass("panel-heading").text(user).appendTo(pm);
     var close = $("<button/>").addClass("close pull-right")
         .html("&times;")
-        .appendTo(title).click(function () {
+        .appendTo(title).on('click', function () {
             pm.remove();
             $("#pm-placeholder-" + user).remove();
         });
 
     var body = $("<div/>").addClass("panel-body").appendTo(pm).hide();
     var placeholder;
-    title.click(function () {
+    title.on('click', function () {
         body.toggle();
         pm.removeClass("panel-primary").addClass("panel-default");
         if (!body.is(":hidden")) {
@@ -2891,13 +2842,13 @@ function checkScriptAccess(viewSource, type, cb) {
                     "</label></div>");
         var dialog = chatDialog(div);
 
-        close.click(function () {
+        close.on('click', function () {
             dialog.remove();
             /* Implicit denial of script access */
             cb("DENY");
         });
 
-        $("#chanjs-allow").click(function () {
+        $("#chanjs-allow").on('click', function () {
             var save = $("#chanjs-save-pref").is(":checked");
             dialog.remove();
             if (save) {
@@ -2907,7 +2858,7 @@ function checkScriptAccess(viewSource, type, cb) {
             cb("ALLOW");
         });
 
-        $("#chanjs-deny").click(function () {
+        $("#chanjs-deny").on('click', function () {
             var save = $("#chanjs-save-pref").is(":checked");
             dialog.remove();
             if (save) {
@@ -2980,7 +2931,7 @@ function formatScriptAccessPrefs() {
         var clearpref = $("<button/>").addClass("btn btn-sm btn-danger")
             .text("Clear Preference")
             .appendTo($("<td/>").appendTo(tr))
-            .click(function () {
+            .on('click', function () {
                 delete JSPREF[channel];
                 setOpt("channel_js_pref", JSPREF);
                 tr.remove();
@@ -2988,17 +2939,36 @@ function formatScriptAccessPrefs() {
     });
 }
 
-function EmoteList(selector, emoteClickCallback) {
-    this.elem = $(selector);
-    this.initSearch();
-    this.initSortOption();
-    this.table = this.elem.find(".emotelist-table")[0];
-    this.paginatorContainer = this.elem.find(".emotelist-paginator-container");
-    this.cols = 5;
-    this.itemsPerPage = 25;
-    this.emotes = [];
-    this.page = 0;
-    this.emoteClickCallback = emoteClickCallback || function(){};
+
+class EmoteList {
+    constructor(selector, emoteClickCallback){
+        this._cols = 5;
+        this._itemsPerPage = 25;
+        this.elem = $(selector);
+        this.initSearch();
+        this.initSortOption();
+        this.table = this.elem.find(".emotelist-table")[0];
+        this.paginatorContainer = this.elem.find(".emotelist-paginator-container");
+        this.emotes = [];
+        this.page = 0;
+        this.emoteClickCallback = emoteClickCallback || function(){};
+    }
+    set itemsPerPage(val) {
+        this.page = 0;
+        this._itemsPerPage = val;
+        this.handleChange();
+    }
+    get itemsPerPage() {
+        return this._itemsPerPage;
+    }
+    set cols(val) {
+        this.page = 0;
+        this._cols = val;
+        this.handleChange();
+    }
+    get cols() {
+        return this._cols;
+    }
 }
 
 EmoteList.prototype.initSearch = function () {
@@ -3116,11 +3086,11 @@ function onEmoteClicked(emote) {
 window.EMOTELIST = new EmoteList("#emotelist", onEmoteClicked);
 window.EMOTELIST.sortAlphabetical = USEROPTS.emotelist_sort;
 
-function CSEmoteList(selector) {
-    EmoteList.call(this, selector);
+class CSEmoteList extends EmoteList {
+    constructor(selector) {
+        super(selector);
+    }
 }
-
-CSEmoteList.prototype = Object.create(EmoteList.prototype);
 
 CSEmoteList.prototype.loadPage = function (page) {
     var tbody = this.table.children[1];
@@ -3138,6 +3108,7 @@ CSEmoteList.prototype.loadPage = function (page) {
         var row = document.createElement("tr");
         tbody.appendChild(row);
 
+        // TODO: refactor this garbage
         (function (emote, row) {
             // Add delete button
             var tdDelete = document.createElement("td");
@@ -3163,7 +3134,7 @@ CSEmoteList.prototype.loadPage = function (page) {
             row.appendChild(tdName);
 
             var $nameDisplay = $(nameDisplay);
-            $nameDisplay.click(function (clickEvent) {
+            $nameDisplay.on('click', function (clickEvent) {
                 $nameDisplay.detach();
 
                 var editInput = document.createElement("input");
@@ -3233,29 +3204,62 @@ CSEmoteList.prototype.loadPage = function (page) {
             });
 
             // Change the image for an emote
-            $urlDisplay.click(function (clickEvent) {
+            $urlDisplay.on('click', function (clickEvent) {
                 $(tdImage).find(".popover").remove();
                 $urlDisplay.detach();
+
+                var inputGroup = document.createElement("div");
+                inputGroup.className = "input-group";
 
                 var editInput = document.createElement("input");
                 editInput.className = "form-control";
                 editInput.type = "text";
                 editInput.value = emote.image;
-                tdImage.appendChild(editInput);
+                inputGroup.appendChild(editInput);
+
+                var btnGroup = document.createElement("div");
+                btnGroup.className = "input-group-btn";
+
+                var saveBtn = document.createElement("button");
+                saveBtn.className = "btn btn-success";
+                saveBtn.textContent = "Save";
+                saveBtn.type = "button";
+                btnGroup.appendChild(saveBtn);
+
+                var cancelBtn = document.createElement("button");
+                cancelBtn.className = "btn btn-danger";
+                cancelBtn.textContent = "Cancel";
+                cancelBtn.type = "button";
+                btnGroup.appendChild(cancelBtn);
+
+                inputGroup.appendChild(btnGroup);
+                tdImage.appendChild(inputGroup);
+
                 editInput.focus();
 
                 function save() {
                     var val = editInput.value;
-                    tdImage.removeChild(editInput);
-                    tdImage.appendChild(urlDisplay);
+
+                    if (val === emote.image) {
+                        cleanup();
+                        return;
+                    }
 
                     socket.emit("updateEmote", {
                         name: emote.name,
                         image: val
                     });
+
+                    cleanup();
                 }
 
-                editInput.onblur = save;
+                function cleanup() {
+                    tdImage.removeChild(inputGroup);
+                    tdImage.appendChild(urlDisplay);
+                }
+
+                cancelBtn.onclick = cleanup;
+                saveBtn.onclick = save;
                 editInput.onkeyup = function (event) {
                     if (event.keyCode === 13) {
                         save();
@@ -3285,6 +3289,9 @@ function startQueueSpinner(data) {
     if (data.type === "yp") {
         id = "$any";
     }
+    if (data.type === "pt") {
+        id = data.id.split(';').shift()
+    }
 
     var progress = $("<div/>").addClass("progress").attr("id", "queueprogress")
             .data("queue-id", id);
@@ -3301,21 +3308,14 @@ function startQueueSpinner(data) {
 }
 
 function stopQueueSpinner(data) {
-    // TODO: this is a temp hack, need to replace media ID check with
-    // a passthrough request ID (since media ID from API is not necessarily
-    // the same as the URL "ID" from the user)
-    if (data && data.type === "us") {
-        data = { id: data.title.match(/Ustream.tv - (.*)/)[1] };
-    } else if (data && data.type === "mx") {
-        data = { id: data.meta.mixer.channelToken };
+    const qid = $("#queueprogress").data("queue-id");
+    switch (true){
+        case data === null:
+        case qid === "$any":
+        case qid === data?.id:
+            return $("#queueprogress").remove();
     }
-
-    var shouldRemove = (data !== null &&
-                        typeof data === 'object' &&
-                        $("#queueprogress").data("queue-id") === data.id);
-    shouldRemove = shouldRemove || data === null;
-    shouldRemove = shouldRemove || $("#queueprogress").data("queue-id") === "$any";
-    if (shouldRemove) {
+    if (data?.type === "pt" && new RegExp(qid).test(data?.id)) {
         $("#queueprogress").remove();
     }
 }
