@@ -71,6 +71,7 @@ var defaults = {
     "max-channels-per-user": 5,
     "max-accounts-per-ip": 5,
     "guest-login-delay": 60,
+    "max-chat-message-length": 320,
     aliases: {
         "purge-interval": 3600000,
         "max-age": 2592000000
@@ -425,6 +426,11 @@ function preprocessConfig(cfg) {
 
     if (!cfg['channel-storage']) {
         cfg['channel-storage'] = { type: undefined };
+    }
+
+    if (cfg["max-chat-message-length"] > 1000) {
+        LOGGER.warn("Max chat message length was greater than 1000. Setting to 1000.");
+        cfg["max-chat-message-length"] = 1000;
     }
 
     return cfg;
