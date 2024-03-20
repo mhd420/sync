@@ -17,11 +17,11 @@ window.TerdPlayer = class TerdPlayer extends VideoJSPlayer
             # choose 480.
             480: [
                 {
-                    link: "wss://stream.terd.work/live/" + data.id + ".flv",
+                    link: "wss://dipstream.terd.work/live/" + data.id + ".flv",
                     contentType: 'video/flv'
                 },
                 {
-                    link: "https://stream.terd.work/live/" + data.id + ".flv",
+                    link: "https://dipstream.terd.work/live/" + data.id + ".flv",
                     contentType: 'video/flv'
                 }
             ]
