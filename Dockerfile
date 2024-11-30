@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM node:latest AS builder
+FROM node:18 AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -16,7 +16,7 @@ COPY . .
 RUN npm install
 
 # Stage 2: Run the application
-FROM node:latest
+FROM node:18
 
 # Set the working directory
 WORKDIR /app
