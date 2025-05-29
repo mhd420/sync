@@ -18,6 +18,9 @@ RUN npm install
 # Stage 2: Run the application
 FROM node:18
 
+# Install ffmpeg and clean up in one line
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Set the working directory
 WORKDIR /app
 
