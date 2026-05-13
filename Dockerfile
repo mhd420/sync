@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM node:18 AS builder
+FROM node:22 AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -16,7 +16,7 @@ COPY . .
 RUN npm install
 
 # Stage 2: Run the application
-FROM node:18
+FROM node:22
 
 # Install ffmpeg and clean up in one line
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
