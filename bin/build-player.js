@@ -34,6 +34,7 @@ var order = [
     'raw-file.coffee',
     'rtmp.coffee',
     'terdwork.coffee',
+    'flv.coffee',
 
     // mediaUpdate handler
     'update.coffee'

@@ -53,6 +53,8 @@ function formatURL(data) {
             return data.id;
         case "te":
             return "rtmp://terd.work/live/" + data.id;
+        case "fl":
+            return data.id;
         case "cu":
             return data.meta.embed.src;
         case "pt":
@@ -1350,6 +1352,13 @@ function parseMediaLink(url) {
     if(data.protocol == 'rtmp:') {
         return { type: 'rt', id: url };
     }
+    if (url.startsWith('flv://')) {
+        var flvUrl = url.slice(6);
+        if (!flvUrl.match(/^https?:\/\//)) {
+            flvUrl = 'https://' + flvUrl;
+        }
+        return { type: 'fl', id: flvUrl };
+    }
     if (data.pathname.match(/\.m3u8$/)) {
         return { type: 'hl', id: url };
     }
@@ -1362,6 +1371,7 @@ function parseMediaLink(url) {
             if (data.pathname.startsWith('/live/')){
                 return { type: 'te', id: data.pathname.slice(6) }
             }
+            break;
         case 'youtube.com':
             if(data.pathname == '/watch'){
                 return { type: 'yt', id: data.searchParams.get('v') }
@@ -1373,6 +1383,7 @@ function parseMediaLink(url) {
                 checkYP(data.searchParams.get('list'));
                 return { type: 'yp', id: data.searchParams.get('list') }
             }
+            break;
         case 'youtu.be':
             return { type: 'yt', id: data.pathname.slice(1) }
 

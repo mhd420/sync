@@ -207,6 +207,8 @@
                 return id;
             case "te":
                 return "http://terd.work/live/" + id + ".flv";
+            case "fl":
+                return id;
             case "pt": {
                 const [domain,uuid] = id.split(';');
                 return `https://${domain}/videos/watch/${uuid}`;
@@ -236,6 +238,7 @@
             case "cu":
             case "hl":
             case "te":
+            case "fl":
                 return true;
             default:
                 return false;

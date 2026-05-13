@@ -15,6 +15,7 @@ TYPE_MAP =
     tc: TwitchClipPlayer
     cm: VideoJSPlayer
     te: TerdPlayer
+    fl: FlvPlayer
     pt: PeerPlayer
     bc: IframeChild
     bn: IframeChild

@@ -325,6 +325,12 @@ var Getters = {
         callback(false, media);
     },
 
+    fl: function (id, callback) {
+        var title = id;
+        var media = new Media(id, title, "--:--", "fl");
+        callback(false, media);
+    },
+
     /* custom embed */
     cu: function (id, callback) {
         var media;
